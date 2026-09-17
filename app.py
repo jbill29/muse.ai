@@ -143,19 +143,14 @@ with tab_vis:
         width=0.012, pivot="mid",
     )
     if show_stream:
-        # streamlines on a finer polar grid converted to cartesian
-        r_s = np.linspace(R1, R2, 40)
-        th_s = np.linspace(0, 2 * np.pi, 120)
-        Rg, Tg = np.meshgrid(r_s, th_s)
-        Vs = v_theta(Rg, A, B)
-        Us = -Vs * np.sin(Tg)
-        Ws = Vs * np.cos(Tg)
-        Xs = Rg * np.cos(Tg)
-        Ys = Rg * np.sin(Tg)
-        ax3.streamplot(
-            Xs, Ys, Us, Ws, color="white", linewidth=0.7,
-            arrowsize=0.8, density=1.2, broken_streamlines=False,
-        )
+        # Streamlines of purely azimuthal flow are exact circles r = const,
+        # so draw them analytically. (streamplot requires a rectangular grid
+        # and rejects the polar grid used here.)
+        for rr in np.linspace(R1, R2, 14)[1:-1]:
+            ax3.plot(
+                rr * np.cos(th), rr * np.sin(th),
+                color="white", lw=0.7, alpha=0.85,
+            )
     ax3.set_aspect("equal")
     ax3.set_xlim(-R2 * 1.15, R2 * 1.15)
     ax3.set_ylim(-R2 * 1.15, R2 * 1.15)
