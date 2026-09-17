@@ -28,10 +28,14 @@ if R2 <= R1:
     st.stop()
 w1 = st.sidebar.slider("Inner angular velocity ω1 (rad/s)", -5.0, 5.0, 2.0, 0.1)
 w2 = st.sidebar.slider("Outer angular velocity ω2 (rad/s)", -5.0, 5.0, 0.5, 0.1)
+st.sidebar.header("Fluid & Cylinder (Newtonian)")
+mu = st.sidebar.slider("Dynamic viscosity μ (Pa·s)", 0.01, 2.0, 0.5, 0.01)
+Lcyl = st.sidebar.slider("Cylinder length L (m)", 0.1, 5.0, 1.0, 0.1)
 n_vec = st.sidebar.slider("Vector field density", 10, 30, 18, 1)
 show_stream = st.sidebar.checkbox("Overlay streamlines", value=True)
 
 A, B = couette_coeffs(R1, R2, w1, w2)
+T_torque = -4 * np.pi * mu * Lcyl * B  # N·m, signed
 
 st.title("Taylor–Couette Flow: Velocity Between Concentric Cylinders")
 st.markdown(
@@ -46,7 +50,6 @@ with tab_vis:
 
     r = np.linspace(R1, R2, 300)
     v = v_theta(r, A, B)
-    om = omega(r, A, B)
 
     with col1:
         st.subheader("Velocity profile vθ(r)")
@@ -65,19 +68,37 @@ with tab_vis:
             r"A = \frac{\omega_2 R_2^2 - \omega_1 R_1^2}{R_2^2 - R_1^2}"
             r",\quad B = \frac{(\omega_1 - \omega_2) R_1^2 R_2^2}{R_2^2 - R_1^2}"
         )
-        st.write(f"Current values: A = {A:.3f}, B = {B:.3f}")
+        st.write(f"Current values: A = {A:.3f}, B = {B:.3f}, T = {T_torque:.4f} N·m")
 
     with col2:
-        st.subheader("Angular velocity Ω(r)")
+        st.subheader("Shear-stress distribution τ(r)")
+        tau = -2 * mu * B / r**2
         fig2, ax2 = plt.subplots(figsize=(5, 4))
-        ax2.plot(r, om, lw=2.5, color="darkorange")
+        ax2.plot(r, tau, lw=2.5, color="darkorange")
         ax2.axvline(R1, color="gray", ls="--", alpha=0.6)
         ax2.axvline(R2, color="gray", ls="--", alpha=0.6)
         ax2.set_xlabel("r")
-        ax2.set_ylabel("Ω(r) = vθ/r")
-        ax2.set_title("Angular velocity across the gap")
+        ax2.set_ylabel("τ(r)")
+        ax2.set_title("Shear stress across the gap")
         ax2.grid(alpha=0.3)
         st.pyplot(fig2)
+        st.latex(r"\tau(r) = \mu\,r\,\frac{d\Omega}{dr} = -\frac{2\,\mu\,B}{r^2}")
+        st.caption(
+            "Magnitude is largest at the inner wall. The sign gives the "
+            "stress direction relative to +θ."
+        )
+
+    st.subheader("Torque transmitted through the fluid")
+    st.latex(r"T = -4\,\pi\,\mu\,L\,B")
+    st.metric(
+        "Torque |T|",
+        f"{abs(T_torque):.4f} N·m",
+        help="Same at every radius in steady flow (angular-momentum balance).",
+    )
+    st.caption(
+        f"μ = {mu} Pa·s, L = {Lcyl} m. "
+        "The sign of T indicates direction; the magnitude is what the motor must supply."
+    )
 
     st.subheader("Cross-section vector field (r–θ plane)")
     st.markdown(
@@ -100,14 +121,26 @@ with tab_vis:
     Vy[mask] = Vt[mask] * np.cos(Theta[mask])
     speed = np.sqrt(Vx**2 + Vy**2)
 
+    # Arrow sizing: normalize so the longest arrow spans 0.8x the grid
+    # spacing. This guarantees no excessive overlap at any slider setting,
+    # while color still encodes the absolute speed.
+    dx = float(x[1] - x[0])
+    vmax = float(np.nanmax(speed)) if np.any(mask) else 0.0
+    if vmax > 0:
+        _s = 0.8 * dx / vmax
+        Ux, Uy = Vx * _s, Vy * _s
+    else:
+        Ux, Uy = Vx, Vy
+
     fig3, ax3 = plt.subplots(figsize=(7, 7))
     # draw cylinder walls
     th = np.linspace(0, 2 * np.pi, 200)
     ax3.plot(R1 * np.cos(th), R1 * np.sin(th), "k-", lw=3, label="Inner wall")
     ax3.plot(R2 * np.cos(th), R2 * np.sin(th), "k-", lw=3, label="Outer wall")
     q = ax3.quiver(
-        X, Y, Vx, Vy, speed,
-        cmap="viridis", scale=None, width=0.012, pivot="mid",
+        X, Y, Ux, Uy, speed,
+        cmap="viridis", scale=1, scale_units="xy",
+        width=0.012, pivot="mid",
     )
     if show_stream:
         # streamlines on a finer polar grid converted to cartesian
