@@ -30,12 +30,24 @@ w1 = st.sidebar.slider("Inner angular velocity ω1 (rad/s)", -5.0, 5.0, 2.0, 0.1
 w2 = st.sidebar.slider("Outer angular velocity ω2 (rad/s)", -5.0, 5.0, 0.5, 0.1)
 st.sidebar.header("Fluid & Cylinder (Newtonian)")
 mu = st.sidebar.slider("Dynamic viscosity μ (Pa·s)", 0.01, 2.0, 0.5, 0.01)
+rho = st.sidebar.slider("Density ρ (kg/m³)", 100.0, 2000.0, 1000.0, 10.0)
 Lcyl = st.sidebar.slider("Cylinder length L (m)", 0.1, 5.0, 1.0, 0.1)
 n_vec = st.sidebar.slider("Vector field density", 10, 30, 18, 1)
 show_stream = st.sidebar.checkbox("Overlay streamlines", value=True)
 
 A, B = couette_coeffs(R1, R2, w1, w2)
 T_torque = -4 * np.pi * mu * Lcyl * B  # N·m, signed
+
+# ---------------- Taylor-vortex threshold (narrow-gap criterion) ----------------
+# Convention: Ta = w1^2 * d^3 * R1 / nu^2, critical Ta_c = 1708
+# (narrow-gap limit, outer cylinder at rest; Taylor 1923).
+# Kinematic viscosity nu = mu / rho, hence the density input in the sidebar.
+d_gap = R2 - R1
+nu = mu / rho
+TA_CRIT = 1708.0
+Ta = w1**2 * d_gap**3 * R1 / nu**2 if nu > 0 else float("inf")
+w1_crit = (TA_CRIT * nu**2 / (d_gap**3 * R1)) ** 0.5
+is_laminar = Ta < TA_CRIT
 
 st.title("Taylor–Couette Flow: Velocity Between Concentric Cylinders")
 st.markdown(
@@ -98,6 +110,48 @@ with tab_vis:
     st.caption(
         f"μ = {mu} Pa·s, L = {Lcyl} m. "
         "The sign of T indicates direction; the magnitude is what the motor must supply."
+    )
+
+    st.subheader("Taylor-vortex threshold")
+    st.markdown(
+        "Spin the inner cylinder fast enough and the smooth laminar flow above "
+        "breaks down into a stack of donut-shaped Taylor vortices. This panel flags "
+        "whether your current settings stay laminar."
+    )
+    if is_laminar:
+        st.success("LAMINAR — Taylor number below critical; the profile above applies.")
+    else:
+        st.error(
+            "TAYLOR VORTICES expected — Taylor number above critical; "
+            "the laminar profile above no longer describes the flow."
+        )
+    tcol1, tcol2 = st.columns(2)
+    with tcol1:
+        st.metric(
+            "Taylor number Ta",
+            f"{Ta:.4g}",
+            help="Ta = ω1² d³ R1 / ν². Laminar while Ta < 1708.",
+        )
+    with tcol2:
+        st.metric(
+            "Critical inner speed ω1,c",
+            f"{w1_crit:.4g} rad/s",
+            help="Inner-cylinder speed at which Ta reaches 1708 for this geometry and fluid.",
+        )
+    st.latex(r"Ta = \frac{\omega_1^2\, d^3\, R_1}{\nu^2}, \qquad Ta_c = 1708")
+    st.markdown(
+        "**Why it happens (geometric picture).** Picture a thin ring of fluid nudged "
+        "slightly outward. Out there its neighbors move more slowly, but the displaced "
+        "ring keeps its faster spin — so centrifugal force flings it further outward, "
+        "while slower fluid sinks inward to take its place. Viscosity tries to smear "
+        "this motion out, and at gentle spin rates it wins. Past a critical rate the "
+        "centrifugal imbalance wins instead, and the runaway motion rolls up into a "
+        "stack of donut-shaped vortices."
+    )
+    st.caption(
+        "Convention: Ta = ω1²d³R1/ν² with critical value 1708 (narrow-gap limit, outer "
+        "cylinder at rest). Approximate when the gap is wide or ω2 ≠ 0 — counter-rotation "
+        "and wide gaps shift the true threshold."
     )
 
     st.subheader("Cross-section vector field (r–θ plane)")
