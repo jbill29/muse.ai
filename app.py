@@ -211,23 +211,28 @@ def flow_diagram(selected_key):
     return fig
 
 
+@st.fragment
+def frag_tab_flow():
+        st.header("Follow the flow path")
+        st.write(
+            "THF travels through the instrument in one fixed order. "
+            "Pick a component to highlight it and see what it does."
+        )
+        sel_name = st.selectbox("Component", [c["name"] for c in COMPONENTS])
+        comp = next(c for c in COMPONENTS if c["name"] == sel_name)
+        col_a, col_b = st.columns([2.1, 1])
+        with col_a:
+            st.pyplot(flow_diagram(comp["key"]))
+        with col_b:
+            st.subheader(comp["name"])
+            st.caption(comp["tag"])
+            st.write("**What it does:** " + comp["what"])
+            st.write("**Why it matters:** " + comp["why"])
+            st.write("**If it goes wrong:** " + comp["fails"])
+
+
 with tab_flow:
-    st.header("Follow the flow path")
-    st.write(
-        "THF travels through the instrument in one fixed order. "
-        "Pick a component to highlight it and see what it does."
-    )
-    sel_name = st.selectbox("Component", [c["name"] for c in COMPONENTS])
-    comp = next(c for c in COMPONENTS if c["name"] == sel_name)
-    col_a, col_b = st.columns([2.1, 1])
-    with col_a:
-        st.pyplot(flow_diagram(comp["key"]))
-    with col_b:
-        st.subheader(comp["name"])
-        st.caption(comp["tag"])
-        st.write("**What it does:** " + comp["what"])
-        st.write("**Why it matters:** " + comp["why"])
-        st.write("**If it goes wrong:** " + comp["fails"])
+    frag_tab_flow()
 
 # ----------------------------------------------------------------------------
 # Tab 2: Separation — big = fast, small = slow
@@ -354,28 +359,33 @@ def elution_figure(t):
     return fig
 
 
+@st.fragment
+def frag_tab_sep():
+        st.header("Separation: big = fast, small = slow")
+        st.write(
+            "The beads are full of pores, and ideally nothing sticks — separation is purely by size. "
+            "Chains too big for the pores stay in the fast lane; chains that fit take the scenic route."
+        )
+        st.pyplot(pore_figure())
+        st.subheader("Watch it happen")
+        st.write("Scrub through time (or animate) and see the bands separate inside the column while the detector draws the chromatogram.")
+        t_now = st.slider("Time", 0.0, T_MAX, 0.0, 0.02, key="etime")
+        animate = st.button("▶ Animate", key="eanim")
+        ph = st.empty()
+        if animate:
+            for tt in np.linspace(0.0, T_MAX, 80):
+                ph.pyplot(elution_figure(tt))
+                time.sleep(0.045)
+        else:
+            ph.pyplot(elution_figure(t_now))
+        st.info(
+            "Notice the elution order: **large → medium → small**. "
+            "This is backwards from most chromatography, where bigger things usually come out later."
+        )
+
+
 with tab_sep:
-    st.header("Separation: big = fast, small = slow")
-    st.write(
-        "The beads are full of pores, and ideally nothing sticks — separation is purely by size. "
-        "Chains too big for the pores stay in the fast lane; chains that fit take the scenic route."
-    )
-    st.pyplot(pore_figure())
-    st.subheader("Watch it happen")
-    st.write("Scrub through time (or animate) and see the bands separate inside the column while the detector draws the chromatogram.")
-    t_now = st.slider("Time", 0.0, T_MAX, 0.0, 0.02, key="etime")
-    animate = st.button("▶ Animate", key="eanim")
-    ph = st.empty()
-    if animate:
-        for tt in np.linspace(0.0, T_MAX, 80):
-            ph.pyplot(elution_figure(tt))
-            time.sleep(0.045)
-    else:
-        ph.pyplot(elution_figure(t_now))
-    st.info(
-        "Notice the elution order: **large → medium → small**. "
-        "This is backwards from most chromatography, where bigger things usually come out later."
-    )
+    frag_tab_sep()
 
 # ----------------------------------------------------------------------------
 # Tab 3: Chromatogram lab
@@ -401,181 +411,196 @@ def chromatogram(logMn, D, t):
     return t, w, t_Mn, t_Mw, Mn, Mw
 
 
+@st.fragment
+def frag_tab_chrom():
+        st.header("Chromatogram lab")
+        st.write(
+            "Dial in a molecular-weight distribution and watch the chromatogram it produces. "
+            "The distribution is log-normal — the standard model for polymer samples."
+        )
+        cc1, cc2 = st.columns([1, 2.2])
+        with cc1:
+            logMn_A = st.slider("Sample A: Mn (log₁₀ g/mol)", 3.0, 6.5, 5.0, 0.05)
+            D_A = st.slider("Sample A: dispersity Đ = Mw/Mn", 1.05, 3.0, 1.5, 0.05)
+            st.caption(f"Sample A Mn = {10.0**logMn_A:,.0f} g/mol")
+            show_B = st.checkbox("Compare with sample B")
+            if show_B:
+                logMn_B = st.slider("Sample B: Mn (log₁₀ g/mol)", 3.0, 6.5, 4.7, 0.05)
+                D_B = st.slider("Sample B: dispersity Đ = Mw/Mn", 1.05, 3.0, 2.2, 0.05)
+                st.caption(f"Sample B Mn = {10.0**logMn_B:,.0f} g/mol")
+        with cc2:
+            t = np.linspace(2, 16, 500)
+            fig, ax = plt.subplots(figsize=(9, 4.6))
+            tA, wA, tMnA, tMwA, MnA, MwA = chromatogram(logMn_A, D_A, t)
+            ax.plot(tA, wA, color="#3b82f6", lw=2.5, label="Sample A")
+            ax.axvline(tMnA, color="#3b82f6", ls="--", lw=1.2, alpha=0.8)
+            ax.axvline(tMwA, color="#3b82f6", ls=":", lw=1.6, alpha=0.8)
+            ax.text(tMnA, 1.03, "Mn", ha="center", fontsize=9, color="#3b82f6", weight="bold")
+            ax.text(tMwA, 0.94, "Mw", ha="center", fontsize=9, color="#3b82f6", weight="bold")
+            if show_B:
+                tB, wB, tMnB, tMwB, MnB, MwB = chromatogram(logMn_B, D_B, t)
+                ax.plot(tB, wB, color="#f59e0b", lw=2.5, label="Sample B")
+                ax.axvline(tMnB, color="#f59e0b", ls="--", lw=1.2, alpha=0.8)
+            ax.set_xlim(2, 16)
+            ax.set_ylim(0, 1.32)
+            ax.set_xlabel("elution time (min) →")
+            ax.set_ylabel("RI signal (normalized)")
+            ax.set_title("Simulated chromatogram", fontsize=12, weight="bold")
+            ax.legend()
+            ax.grid(alpha=0.3)
+            fig.tight_layout()
+            st.pyplot(fig)
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Sample A Mn", f"{MnA:,.0f} g/mol")
+            m2.metric("Sample A Mw", f"{MwA:,.0f} g/mol")
+            m3.metric("Sample A Đ", f"{D_A:.2f}")
+            if show_B:
+                n1, n2, n3 = st.columns(3)
+                n1.metric("Sample B Mn", f"{MnB:,.0f} g/mol")
+                n2.metric("Sample B Mw", f"{MwB:,.0f} g/mol")
+                n3.metric("Sample B Đ", f"{D_B:.2f}")
+        st.info(
+            "Reading the plot: the **peak position** tells you the typical chain size, the **width** tells you "
+            "the dispersity, and **shoulders or double peaks** mean a bimodal sample (e.g. a side reaction). "
+            "Mn and Mw sit at different times because Mw weights the big chains more — and big chains elute earlier."
+        )
+
+
 with tab_chrom:
-    st.header("Chromatogram lab")
-    st.write(
-        "Dial in a molecular-weight distribution and watch the chromatogram it produces. "
-        "The distribution is log-normal — the standard model for polymer samples."
-    )
-    cc1, cc2 = st.columns([1, 2.2])
-    with cc1:
-        logMn_A = st.slider("Sample A: Mn (log₁₀ g/mol)", 3.0, 6.5, 5.0, 0.05)
-        D_A = st.slider("Sample A: dispersity Đ = Mw/Mn", 1.05, 3.0, 1.5, 0.05)
-        st.caption(f"Sample A Mn = {10.0**logMn_A:,.0f} g/mol")
-        show_B = st.checkbox("Compare with sample B")
-        if show_B:
-            logMn_B = st.slider("Sample B: Mn (log₁₀ g/mol)", 3.0, 6.5, 4.7, 0.05)
-            D_B = st.slider("Sample B: dispersity Đ = Mw/Mn", 1.05, 3.0, 2.2, 0.05)
-            st.caption(f"Sample B Mn = {10.0**logMn_B:,.0f} g/mol")
-    with cc2:
-        t = np.linspace(2, 16, 500)
-        fig, ax = plt.subplots(figsize=(9, 4.6))
-        tA, wA, tMnA, tMwA, MnA, MwA = chromatogram(logMn_A, D_A, t)
-        ax.plot(tA, wA, color="#3b82f6", lw=2.5, label="Sample A")
-        ax.axvline(tMnA, color="#3b82f6", ls="--", lw=1.2, alpha=0.8)
-        ax.axvline(tMwA, color="#3b82f6", ls=":", lw=1.6, alpha=0.8)
-        ax.text(tMnA, 1.03, "Mn", ha="center", fontsize=9, color="#3b82f6", weight="bold")
-        ax.text(tMwA, 0.94, "Mw", ha="center", fontsize=9, color="#3b82f6", weight="bold")
-        if show_B:
-            tB, wB, tMnB, tMwB, MnB, MwB = chromatogram(logMn_B, D_B, t)
-            ax.plot(tB, wB, color="#f59e0b", lw=2.5, label="Sample B")
-            ax.axvline(tMnB, color="#f59e0b", ls="--", lw=1.2, alpha=0.8)
-        ax.set_xlim(2, 16)
-        ax.set_ylim(0, 1.32)
-        ax.set_xlabel("elution time (min) →")
-        ax.set_ylabel("RI signal (normalized)")
-        ax.set_title("Simulated chromatogram", fontsize=12, weight="bold")
-        ax.legend()
-        ax.grid(alpha=0.3)
-        fig.tight_layout()
-        st.pyplot(fig)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Sample A Mn", f"{MnA:,.0f} g/mol")
-        m2.metric("Sample A Mw", f"{MwA:,.0f} g/mol")
-        m3.metric("Sample A Đ", f"{D_A:.2f}")
-        if show_B:
-            n1, n2, n3 = st.columns(3)
-            n1.metric("Sample B Mn", f"{MnB:,.0f} g/mol")
-            n2.metric("Sample B Mw", f"{MwB:,.0f} g/mol")
-            n3.metric("Sample B Đ", f"{D_B:.2f}")
-    st.info(
-        "Reading the plot: the **peak position** tells you the typical chain size, the **width** tells you "
-        "the dispersity, and **shoulders or double peaks** mean a bimodal sample (e.g. a side reaction). "
-        "Mn and Mw sit at different times because Mw weights the big chains more — and big chains elute earlier."
-    )
+    frag_tab_chrom()
 
 # ----------------------------------------------------------------------------
 # Tab 4: Detectors — triple detection
 # ----------------------------------------------------------------------------
+@st.fragment
+def frag_tab_det():
+        st.header("Three detectors, three answers")
+        st.write(
+            "One peak flows past three detectors in series. Each sees something different — "
+            "together they give mass, concentration, and shape at every point."
+        )
+        a_mh = st.slider(
+            "Mark–Houwink exponent a (chain stiffness)", 0.3, 1.0, 0.7, 0.05, key="mh"
+        )
+        st.caption("a ≈ 0.5: compact coil · a ≈ 0.7–0.8: expanded coil in a good solvent · a → 1: stiff rod")
+        Mn_d, D_d = 1e5, 1.6
+        mu_d, sig_d = lognormal_mu_sig(Mn_d, D_d)
+        td = np.linspace(2, 16, 600)
+        xd = 7.0 - 0.25 * td
+        Md = 10.0**xd
+        xmean_d = (mu_d + sig_d**2) / np.log(10.0)
+        xsd_d = sig_d / np.log(10.0)
+        wd = np.exp(-0.5 * ((xd - xmean_d) / xsd_d) ** 2)
+        wd /= wd.max()
+        ri = wd
+        mals = wd * Md
+        mals /= mals.max()
+        visc = wd * Md**a_mh
+        visc /= visc.max()
+
+        def peak_time(y):
+            return td[int(np.argmax(y))]
+
+        fig, axes = plt.subplots(3, 1, figsize=(10, 7.2), sharex=True)
+        specs = [
+            (ri, "#3b82f6", "RI (Optilab rEX): concentration → how MUCH elutes when"),
+            (mals, "#ef4444", "MALS (miniDAWN TREOS): ∝ concentration × mass → HOW BIG it is"),
+            (visc, "#10b981", "Viscometer (Viscostar II): ∝ concentration × viscosity → chain SHAPE"),
+        ]
+        for ax, (y, color, title) in zip(axes, specs):
+            ax.plot(td, y, color=color, lw=2.4)
+            ax.axvline(peak_time(y), color=color, ls="--", lw=1.2, alpha=0.7)
+            ax.set_ylabel("normalized")
+            ax.set_title(title, fontsize=10, loc="left", color=color, weight="bold")
+            ax.grid(alpha=0.3)
+            ax.set_ylim(0, 1.15)
+        axes[2].set_xlabel("elution time (min) →")
+        fig.tight_layout()
+        st.pyplot(fig)
+        st.info(
+            f"See how the peaks shift: the MALS peak (t = {peak_time(mals):.1f} min) comes out earlier than the RI peak "
+            f"(t = {peak_time(ri):.1f} min), because light scattering weights each slice by its mass — the heavy chains "
+            "dominate. That skew is exactly the extra information triple detection buys you."
+        )
+
+
 with tab_det:
-    st.header("Three detectors, three answers")
-    st.write(
-        "One peak flows past three detectors in series. Each sees something different — "
-        "together they give mass, concentration, and shape at every point."
-    )
-    a_mh = st.slider(
-        "Mark–Houwink exponent a (chain stiffness)", 0.3, 1.0, 0.7, 0.05, key="mh"
-    )
-    st.caption("a ≈ 0.5: compact coil · a ≈ 0.7–0.8: expanded coil in a good solvent · a → 1: stiff rod")
-    Mn_d, D_d = 1e5, 1.6
-    mu_d, sig_d = lognormal_mu_sig(Mn_d, D_d)
-    td = np.linspace(2, 16, 600)
-    xd = 7.0 - 0.25 * td
-    Md = 10.0**xd
-    xmean_d = (mu_d + sig_d**2) / np.log(10.0)
-    xsd_d = sig_d / np.log(10.0)
-    wd = np.exp(-0.5 * ((xd - xmean_d) / xsd_d) ** 2)
-    wd /= wd.max()
-    ri = wd
-    mals = wd * Md
-    mals /= mals.max()
-    visc = wd * Md**a_mh
-    visc /= visc.max()
-
-    def peak_time(y):
-        return td[int(np.argmax(y))]
-
-    fig, axes = plt.subplots(3, 1, figsize=(10, 7.2), sharex=True)
-    specs = [
-        (ri, "#3b82f6", "RI (Optilab rEX): concentration → how MUCH elutes when"),
-        (mals, "#ef4444", "MALS (miniDAWN TREOS): ∝ concentration × mass → HOW BIG it is"),
-        (visc, "#10b981", "Viscometer (Viscostar II): ∝ concentration × viscosity → chain SHAPE"),
-    ]
-    for ax, (y, color, title) in zip(axes, specs):
-        ax.plot(td, y, color=color, lw=2.4)
-        ax.axvline(peak_time(y), color=color, ls="--", lw=1.2, alpha=0.7)
-        ax.set_ylabel("normalized")
-        ax.set_title(title, fontsize=10, loc="left", color=color, weight="bold")
-        ax.grid(alpha=0.3)
-        ax.set_ylim(0, 1.15)
-    axes[2].set_xlabel("elution time (min) →")
-    fig.tight_layout()
-    st.pyplot(fig)
-    st.info(
-        f"See how the peaks shift: the MALS peak (t = {peak_time(mals):.1f} min) comes out earlier than the RI peak "
-        f"(t = {peak_time(ri):.1f} min), because light scattering weights each slice by its mass — the heavy chains "
-        "dominate. That skew is exactly the extra information triple detection buys you."
-    )
+    frag_tab_det()
 
 # ----------------------------------------------------------------------------
 # Tab 5: Calibration — three levels
 # ----------------------------------------------------------------------------
+@st.fragment
+def frag_tab_cal():
+        st.header("Calibration: three levels of sophistication")
+        st.write(
+            "The columns separate by hydrodynamic volume, not mass. How you convert that to "
+            "molecular weight is a ladder — each rung more powerful than the last."
+        )
+        a_s = st.slider(
+            "Sample's Mark–Houwink exponent a (polystyrene standards: a = 0.7)",
+            0.5,
+            0.95,
+            0.6,
+            0.05,
+            key="cals",
+        )
+        st.caption(
+            "Move the slider: the further your polymer's coil behavior is from polystyrene's, "
+            "the more conventional calibration misreads it. (K held equal for illustration.)"
+        )
+        # Universal line: log10(Vh) = Au - Bu*t ; Vh = K*M^(1+a)
+        Au, Bu = 9.17, 0.51
+        K_mh, a_ps = 1.2e-4, 0.7
+        tc = np.linspace(4, 14, 300)
+        Vh = 10.0 ** (Au - Bu * tc)
+        M_true = (Vh / K_mh) ** (1.0 / (1.0 + a_s))
+        M_app = 10.0 ** ((Au - np.log10(K_mh)) / (1 + a_ps) - Bu * tc / (1 + a_ps))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.6))
+        ax1.plot(tc, np.log10(M_app), color="#3b82f6", lw=2.4, label="PS conventional calibration")
+        ts = np.array([5, 7, 9, 11, 13])
+        ax1.scatter(
+            ts,
+            (Au - np.log10(K_mh)) / (1 + a_ps) - Bu * ts / (1 + a_ps),
+            color="#3b82f6",
+            s=45,
+            zorder=5,
+            label="PS standards",
+        )
+        ax1.plot(tc, np.log10(M_true), color="#ef4444", lw=2.4, ls="--", label="Sample true MW")
+        ax1.fill_between(tc, np.log10(M_app), np.log10(M_true), color="#ef4444", alpha=0.12)
+        ax1.set_xlabel("elution time (min)")
+        ax1.set_ylabel("log₁₀ M")
+        ax1.set_title("Level 1 — conventional: misreads the sample", fontsize=11, weight="bold")
+        ax1.legend(fontsize=8)
+        ax1.grid(alpha=0.3)
+        ax2.plot(tc, np.log10(Vh), color="#10b981", lw=2.4)
+        ax2.set_xlabel("elution time (min)")
+        ax2.set_ylabel("log₁₀([η]·M)")
+        ax2.set_title("Level 2 — universal: one line fits all", fontsize=11, weight="bold")
+        ax2.grid(alpha=0.3)
+        fig.tight_layout()
+        st.pyplot(fig)
+        t0 = 9.0
+        m_app_0 = 10.0 ** np.interp(t0, tc, np.log10(M_app))
+        m_true_0 = 10.0 ** np.interp(t0, tc, np.log10(M_true))
+        err = (m_app_0 / m_true_0 - 1.0) * 100.0
+        c1, c2 = st.columns(2)
+        c1.metric(f"At t = {t0:.0f} min, conventional reads", f"{m_app_0:,.0f} g/mol")
+        c2.metric("True molecular weight there", f"{m_true_0:,.0f} g/mol", delta=f"{err:+.0f}% error")
+        st.write(
+            "**Level 1 — conventional:** run polystyrene standards, plot log M vs time. Simple, but only "
+            "valid if your polymer coils like polystyrene. Result: 'polystyrene-equivalent' MW.\n\n"
+            "**Level 2 — universal:** the columns separate by hydrodynamic volume, and [η]·M is proportional "
+            "to it for *every* polymer. With the viscometer measuring [η] at each point, one curve works for "
+            "any chemistry — the right-hand plot above.\n\n"
+            "**Level 3 — light scattering:** skip curves entirely. MALS computes MW from the scattered light "
+            "itself at each point. The gold standard — and it's sitting in your instrument."
+        )
+
+
 with tab_cal:
-    st.header("Calibration: three levels of sophistication")
-    st.write(
-        "The columns separate by hydrodynamic volume, not mass. How you convert that to "
-        "molecular weight is a ladder — each rung more powerful than the last."
-    )
-    a_s = st.slider(
-        "Sample's Mark–Houwink exponent a (polystyrene standards: a = 0.7)",
-        0.5,
-        0.95,
-        0.6,
-        0.05,
-        key="cals",
-    )
-    st.caption(
-        "Move the slider: the further your polymer's coil behavior is from polystyrene's, "
-        "the more conventional calibration misreads it. (K held equal for illustration.)"
-    )
-    # Universal line: log10(Vh) = Au - Bu*t ; Vh = K*M^(1+a)
-    Au, Bu = 9.17, 0.51
-    K_mh, a_ps = 1.2e-4, 0.7
-    tc = np.linspace(4, 14, 300)
-    Vh = 10.0 ** (Au - Bu * tc)
-    M_true = (Vh / K_mh) ** (1.0 / (1.0 + a_s))
-    M_app = 10.0 ** ((Au - np.log10(K_mh)) / (1 + a_ps) - Bu * tc / (1 + a_ps))
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.6))
-    ax1.plot(tc, np.log10(M_app), color="#3b82f6", lw=2.4, label="PS conventional calibration")
-    ts = np.array([5, 7, 9, 11, 13])
-    ax1.scatter(
-        ts,
-        (Au - np.log10(K_mh)) / (1 + a_ps) - Bu * ts / (1 + a_ps),
-        color="#3b82f6",
-        s=45,
-        zorder=5,
-        label="PS standards",
-    )
-    ax1.plot(tc, np.log10(M_true), color="#ef4444", lw=2.4, ls="--", label="Sample true MW")
-    ax1.fill_between(tc, np.log10(M_app), np.log10(M_true), color="#ef4444", alpha=0.12)
-    ax1.set_xlabel("elution time (min)")
-    ax1.set_ylabel("log₁₀ M")
-    ax1.set_title("Level 1 — conventional: misreads the sample", fontsize=11, weight="bold")
-    ax1.legend(fontsize=8)
-    ax1.grid(alpha=0.3)
-    ax2.plot(tc, np.log10(Vh), color="#10b981", lw=2.4)
-    ax2.set_xlabel("elution time (min)")
-    ax2.set_ylabel("log₁₀([η]·M)")
-    ax2.set_title("Level 2 — universal: one line fits all", fontsize=11, weight="bold")
-    ax2.grid(alpha=0.3)
-    fig.tight_layout()
-    st.pyplot(fig)
-    t0 = 9.0
-    m_app_0 = 10.0 ** np.interp(t0, tc, np.log10(M_app))
-    m_true_0 = 10.0 ** np.interp(t0, tc, np.log10(M_true))
-    err = (m_app_0 / m_true_0 - 1.0) * 100.0
-    c1, c2 = st.columns(2)
-    c1.metric(f"At t = {t0:.0f} min, conventional reads", f"{m_app_0:,.0f} g/mol")
-    c2.metric("True molecular weight there", f"{m_true_0:,.0f} g/mol", delta=f"{err:+.0f}% error")
-    st.write(
-        "**Level 1 — conventional:** run polystyrene standards, plot log M vs time. Simple, but only "
-        "valid if your polymer coils like polystyrene. Result: 'polystyrene-equivalent' MW.\n\n"
-        "**Level 2 — universal:** the columns separate by hydrodynamic volume, and [η]·M is proportional "
-        "to it for *every* polymer. With the viscometer measuring [η] at each point, one curve works for "
-        "any chemistry — the right-hand plot above.\n\n"
-        "**Level 3 — light scattering:** skip curves entirely. MALS computes MW from the scattered light "
-        "itself at each point. The gold standard — and it's sitting in your instrument."
-    )
+    frag_tab_cal()
 
 # ----------------------------------------------------------------------------
 # Tab 6: Disassembly checklist
@@ -610,25 +635,30 @@ CHECKLIST = {
     ],
 }
 
+@st.fragment
+def frag_tab_check():
+        st.header("Disassembly checklist — for tomorrow")
+        st.write("Tick these off in the lab with your mentor. Safety items first.")
+        done = 0
+        total = 0
+        for group, items in CHECKLIST.items():
+            st.subheader(group)
+            for i, item in enumerate(items):
+                total += 1
+                if st.checkbox(item, key=f"chk-{group}-{i}"):
+                    done += 1
+        st.progress(done / total if total else 0.0)
+        st.write(f"**{done} of {total} done**")
+        if done == total:
+            st.success("All packed and ready to ship. Nice work.")
+        st.warning(
+            "If anything is pressurized, unfamiliar, or smells strongly of THF — stop and ask your mentor. "
+            "This list is a memory aid, not a substitute for their instructions."
+        )
+
+
 with tab_check:
-    st.header("Disassembly checklist — for tomorrow")
-    st.write("Tick these off in the lab with your mentor. Safety items first.")
-    done = 0
-    total = 0
-    for group, items in CHECKLIST.items():
-        st.subheader(group)
-        for i, item in enumerate(items):
-            total += 1
-            if st.checkbox(item, key=f"chk-{group}-{i}"):
-                done += 1
-    st.progress(done / total if total else 0.0)
-    st.write(f"**{done} of {total} done**")
-    if done == total:
-        st.success("All packed and ready to ship. Nice work.")
-    st.warning(
-        "If anything is pressurized, unfamiliar, or smells strongly of THF — stop and ask your mentor. "
-        "This list is a memory aid, not a substitute for their instructions."
-    )
+    frag_tab_check()
 
 st.divider()
 st.caption(
