@@ -5,38 +5,29 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Taylor-Couette Flow Visualizer", layout="wide")
 
 # ---------------- Live widget (browser-side, 60 fps) ----------------
-# One embedded widget holds the sticky control panel plus every
-# visualization: v_theta(r) and tau(r) curves, the cross-section vector
-# field, torque, and the Taylor-vortex panel. All math runs as
-# JavaScript in the browser, so dragging a slider morphs everything
-# continuously with no server round-trip.
-COUETTE_LIVE_HTML = """<!DOCTYPE html>
+# Sliders live in the real Streamlit sidebar; plots live in the main tab.
+# The two iframes share the same origin, so they sync through
+# localStorage: the sidebar publishes on every input, the main
+# widget redraws on the storage event. No server round-trip.
+SIDEBAR_HTML = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet">
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root{
-    --track:#dfe1e6; --lab:#31333f; --val:#31333f; --sub:#6b7280;
-    --accent:#ff4b4b; --box:#f1f5f9;
+    --track:#dfe1e6; --lab:#31333f; --val:#31333f;
+    --accent:#ff4b4b;
   }
   @media (prefers-color-scheme: dark){
-    :root{ --track:#3a3d46; --lab:#e8eaf0; --val:#e8eaf0; --sub:#9aa0ae; --box:#232838; }
+    :root{ --track:#3a3d46; --lab:#e8eaf0; --val:#e8eaf0; }
   }
   html, body{ background:transparent; }
   body{
     font-family:"Source Sans Pro",-apple-system,"Segoe UI",Roboto,sans-serif;
-    margin:0; color:var(--lab);
+    margin:0; padding:6px 10px 12px 4px; color:var(--lab);
   }
-  .app{ display:flex; gap:18px; align-items:flex-start; }
-  .panel{
-    width:236px; flex:0 0 236px; padding:8px 4px 8px 8px;
-    position:sticky; top:0; align-self:flex-start;
-    max-height:900px; overflow-y:auto;
-  }
-  .ptitle{ font-size:15px; font-weight:600; margin:2px 0 10px; }
-  .content{ flex:1 1 auto; min-width:0; }
+  .ptitle{ font-size:16px; font-weight:600; margin:2px 0 12px; }
   .sld{ margin-bottom:13px; }
   .labrow{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px; }
   .labrow .t{ font-size:14px; color:var(--lab); }
@@ -66,7 +57,108 @@ COUETTE_LIVE_HTML = """<!DOCTYPE html>
   input[type=range]:focus{ outline:none; }
   .chk{ display:flex; align-items:center; gap:8px; font-size:14px; margin:4px 0 10px; cursor:pointer; }
   .chk input{ accent-color:var(--accent); width:16px; height:16px; cursor:pointer; }
-  #warn{ color:#ff6b6b; font-size:13px; margin-top:4px; display:none; }
+  #warn{ color:#ff6b6b; font-size:13px; margin-top:4px; display:none; line-height:1.4; }
+</style>
+</head>
+<body>
+<div class="ptitle">Controls</div>
+<div class="sld"><div class="labrow"><span class="t">R&#8321; (m)</span><span class="v" id="o_R1"></span></div>
+  <input id="s_R1" type="range" min="0.1" max="2" step="0.05" value="1" data-dec="2"></div>
+<div class="sld"><div class="labrow"><span class="t">R&#8322; (m)</span><span class="v" id="o_R2"></span></div>
+  <input id="s_R2" type="range" min="0.5" max="3" step="0.05" value="2" data-dec="2"></div>
+<div class="sld"><div class="labrow"><span class="t">&omega;&#8321; (rad/s)</span><span class="v" id="o_w1"></span></div>
+  <input id="s_w1" type="range" min="-5" max="5" step="0.1" value="2" data-dec="1"></div>
+<div class="sld"><div class="labrow"><span class="t">&omega;&#8322; (rad/s)</span><span class="v" id="o_w2"></span></div>
+  <input id="s_w2" type="range" min="-5" max="5" step="0.1" value="0.5" data-dec="1"></div>
+<div class="sld"><div class="labrow"><span class="t">&mu; (Pa&middot;s)</span><span class="v" id="o_mu"></span></div>
+  <input id="s_mu" type="range" min="0.01" max="2" step="0.01" value="0.5" data-dec="2"></div>
+<div class="sld"><div class="labrow"><span class="t">&rho; (kg/m&sup3;)</span><span class="v" id="o_rho"></span></div>
+  <input id="s_rho" type="range" min="500" max="2000" step="10" value="1000" data-dec="0"></div>
+<div class="sld"><div class="labrow"><span class="t">Length L (m)</span><span class="v" id="o_Lcyl"></span></div>
+  <input id="s_Lcyl" type="range" min="0.1" max="2" step="0.05" value="1" data-dec="2"></div>
+<div class="sld"><div class="labrow"><span class="t">Vector density</span><span class="v" id="o_nvec"></span></div>
+  <input id="s_nvec" type="range" min="8" max="24" step="1" value="14" data-dec="0"></div>
+<label class="chk"><input type="checkbox" id="c_stream" checked> Overlay streamlines</label>
+<div id="warn">Need R&#8322; &gt; R&#8321; &mdash; widen the outer radius or shrink the inner one.</div>
+<script>
+var KEY = 'couette_params_v1';
+var IDS = ['R1','R2','w1','w2','mu','rho','Lcyl','nvec'];
+var DEFS = { R1:1, R2:2, w1:2, w2:0.5, mu:0.5, rho:1000, Lcyl:1, nvec:14, showStream:true };
+function el(id){ return document.getElementById(id); }
+function store(){ try { return window.localStorage; } catch (e) { return null; } }
+function refreshSlider(id){
+  var s = el('s_'+id);
+  var dec = parseInt(s.getAttribute('data-dec') || '2', 10);
+  el('o_'+id).textContent = parseFloat(s.value).toFixed(dec);
+  s.style.setProperty('--p', ((s.value - s.min) / (s.max - s.min) * 100) + '%');
+}
+function readParams(){
+  var p = {}, ls = store(), raw = null;
+  if (ls) { try { raw = ls.getItem(KEY); } catch (e) {} }
+  if (raw) { try { p = JSON.parse(raw); } catch (e) { p = {}; } }
+  var out = {}, k, v;
+  for (k in DEFS){
+    if (k === 'showStream') continue;
+    v = p[k];
+    out[k] = (typeof v === 'number' && isFinite(v)) ? v : DEFS[k];
+  }
+  out.showStream = (typeof p.showStream === 'boolean') ? p.showStream : true;
+  return out;
+}
+function curParams(){
+  var p = {}, i;
+  for (i = 0; i < IDS.length; i++) p[IDS[i]] = parseFloat(el('s_'+IDS[i]).value);
+  p.nvec = Math.round(p.nvec);
+  p.showStream = el('c_stream').checked;
+  return p;
+}
+function publish(){
+  var ls = store();
+  if (!ls) return;
+  try { ls.setItem(KEY, JSON.stringify(curParams())); } catch (e) {}
+}
+function updateWarn(){
+  var bad = parseFloat(el('s_R2').value) <= parseFloat(el('s_R1').value);
+  el('warn').style.display = bad ? 'block' : 'none';
+}
+(function init(){
+  var p = readParams(), i;
+  for (i = 0; i < IDS.length; i++){
+    el('s_'+IDS[i]).value = p[IDS[i]];
+    refreshSlider(IDS[i]);
+  }
+  el('c_stream').checked = p.showStream;
+  updateWarn();
+  publish();
+})();
+IDS.forEach(function(id){
+  el('s_'+id).addEventListener('input', function(){ refreshSlider(id); updateWarn(); publish(); });
+});
+el('c_stream').addEventListener('change', publish);
+</script>
+</body>
+</html>
+"""
+
+
+MAIN_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root{
+    --lab:#31333f; --val:#31333f; --sub:#6b7280; --box:#f1f5f9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --lab:#e8eaf0; --val:#e8eaf0; --sub:#9aa0ae; --box:#232838; }
+  }
+  html, body{ background:transparent; }
+  body{
+    font-family:"Source Sans Pro",-apple-system,"Segoe UI",Roboto,sans-serif;
+    margin:0; padding:4px; color:var(--lab);
+  }
   .abline{ font-size:14px; color:var(--sub); font-variant-numeric:tabular-nums; margin:4px 0 6px; }
   .plotrow{ display:flex; gap:8px; }
   .plotrow > div{ flex:1 1 0; min-width:0; }
@@ -91,56 +183,40 @@ COUETTE_LIVE_HTML = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="panel">
-    <div class="ptitle">Controls</div>
-    <div class="sld"><div class="labrow"><span class="t">R&#8321; (m)</span><span class="v" id="o_R1"></span></div>
-      <input id="s_R1" type="range" min="0.1" max="2" step="0.05" value="1" data-dec="2"></div>
-    <div class="sld"><div class="labrow"><span class="t">R&#8322; (m)</span><span class="v" id="o_R2"></span></div>
-      <input id="s_R2" type="range" min="0.5" max="3" step="0.05" value="2" data-dec="2"></div>
-    <div class="sld"><div class="labrow"><span class="t">&omega;&#8321; (rad/s)</span><span class="v" id="o_w1"></span></div>
-      <input id="s_w1" type="range" min="-5" max="5" step="0.1" value="2" data-dec="1"></div>
-    <div class="sld"><div class="labrow"><span class="t">&omega;&#8322; (rad/s)</span><span class="v" id="o_w2"></span></div>
-      <input id="s_w2" type="range" min="-5" max="5" step="0.1" value="0.5" data-dec="1"></div>
-    <div class="sld"><div class="labrow"><span class="t">&mu; (Pa&middot;s)</span><span class="v" id="o_mu"></span></div>
-      <input id="s_mu" type="range" min="0.01" max="2" step="0.01" value="0.5" data-dec="2"></div>
-    <div class="sld"><div class="labrow"><span class="t">&rho; (kg/m&sup3;)</span><span class="v" id="o_rho"></span></div>
-      <input id="s_rho" type="range" min="500" max="2000" step="10" value="1000" data-dec="0"></div>
-    <div class="sld"><div class="labrow"><span class="t">Length L (m)</span><span class="v" id="o_Lcyl"></span></div>
-      <input id="s_Lcyl" type="range" min="0.1" max="2" step="0.05" value="1" data-dec="2"></div>
-    <div class="sld"><div class="labrow"><span class="t">Vector density</span><span class="v" id="o_nvec"></span></div>
-      <input id="s_nvec" type="range" min="8" max="24" step="1" value="14" data-dec="0"></div>
-    <label class="chk"><input type="checkbox" id="c_stream" checked> Overlay streamlines</label>
-    <div id="warn">Need R&#8322; &gt; R&#8321; &mdash; widen the outer radius or shrink the inner one.</div>
-  </div>
-  <div class="content">
-    <div class="abline" id="abLine"></div>
-    <div class="plotrow"><div id="plotV"></div><div id="plotT"></div></div>
-    <div class="note">Shear magnitude is largest at the inner wall; the sign gives the stress direction relative to +&theta;.</div>
-    <div class="vecrow">
-      <canvas id="vecCanvas" width="460" height="460"></canvas>
-      <div class="vecside">
-        <div class="vtitle">Cross-section vector field (r&ndash;&theta; plane)</div>
-        <div class="note">Arrows show the local fluid velocity. Length is proportional to speed; color (viridis) also encodes speed.</div>
-        <div class="sec">Torque transmitted through the fluid</div>
-        <div class="mgrid" id="torqueM"></div>
-        <div class="sec">Taylor-vortex threshold</div>
-        <div class="banner" id="taylorBanner"></div>
-        <div class="mgrid" id="taylorM"></div>
-        <div class="note">Ta = &omega;&#8321;&sup2;d&sup3;R&#8321;/&nu;&sup2;, critical 1708 (narrow-gap, outer cylinder at rest). Spin the inner cylinder fast enough and the smooth laminar flow breaks into stacked Taylor vortices.</div>
-      </div>
-    </div>
+<div class="abline" id="abLine"></div>
+<div class="plotrow"><div id="plotV"></div><div id="plotT"></div></div>
+<div class="note">Shear magnitude is largest at the inner wall; the sign gives the stress direction relative to +&theta;.</div>
+<div class="vecrow">
+  <canvas id="vecCanvas" width="460" height="460"></canvas>
+  <div class="vecside">
+    <div class="vtitle">Cross-section vector field (r&ndash;&theta; plane)</div>
+    <div class="note">Arrows show the local fluid velocity. Length is proportional to speed; color (viridis) also encodes speed.</div>
+    <div class="sec">Torque transmitted through the fluid</div>
+    <div class="mgrid" id="torqueM"></div>
+    <div class="sec">Taylor-vortex threshold</div>
+    <div class="banner" id="taylorBanner"></div>
+    <div class="mgrid" id="taylorM"></div>
+    <div class="note">Ta = &omega;&#8321;&sup2;d&sup3;R&#8321;/&nu;&sup2;, critical 1708 (narrow-gap, outer cylinder at rest). Spin the inner cylinder fast enough and the smooth laminar flow breaks into stacked Taylor vortices.</div>
   </div>
 </div>
 <script>
-var IDS = ['R1','R2','w1','w2','mu','rho','Lcyl','nvec'];
+var KEY = 'couette_params_v1';
+var DEFS = { R1:1, R2:2, w1:2, w2:0.5, mu:0.5, rho:1000, Lcyl:1, nvec:14, showStream:true };
 function el(id){ return document.getElementById(id); }
-function sval(id){ return parseFloat(el('s_'+id).value); }
-function refreshSlider(id){
-  var s = el('s_'+id);
-  var dec = parseInt(s.getAttribute('data-dec') || '2', 10);
-  el('o_'+id).textContent = parseFloat(s.value).toFixed(dec);
-  s.style.setProperty('--p', ((s.value - s.min) / (s.max - s.min) * 100) + '%');
+function store(){ try { return window.localStorage; } catch (e) { return null; } }
+function readParams(){
+  var p = {}, ls = store(), raw = null;
+  if (ls) { try { raw = ls.getItem(KEY); } catch (e) {} }
+  if (raw) { try { p = JSON.parse(raw); } catch (e) { p = {}; } }
+  var out = {}, k, v;
+  for (k in DEFS){
+    if (k === 'showStream') continue;
+    v = p[k];
+    out[k] = (typeof v === 'number' && isFinite(v)) ? v : DEFS[k];
+  }
+  out.showStream = (typeof p.showStream === 'boolean') ? p.showStream : true;
+  out.nvec = Math.round(out.nvec);
+  return out;
 }
 function isDark(){ return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
 function themed(title){
@@ -163,18 +239,9 @@ function vcolor(t){
   function c(k){ return Math.round(a[k] + (b[k] - a[k]) * f); }
   return 'rgb(' + c(0) + ',' + c(1) + ',' + c(2) + ')';
 }
-function params(){
-  return {
-    R1: sval('R1'), R2: sval('R2'), w1: sval('w1'), w2: sval('w2'),
-    mu: sval('mu'), rho: sval('rho'), Lcyl: sval('Lcyl'),
-    nvec: Math.round(sval('nvec')), showStream: el('c_stream').checked
-  };
-}
 function draw(){
-  IDS.forEach(refreshSlider);
-  var p = params(), warn = el('warn');
-  if (p.R2 <= p.R1){ warn.style.display = 'block'; return; }
-  warn.style.display = 'none';
+  var p = readParams();
+  if (p.R2 <= p.R1) return; /* keep last frame; the sidebar shows the warning */
   var den = p.R2 * p.R2 - p.R1 * p.R1;
   var A = (p.w2 * p.R2 * p.R2 - p.w1 * p.R1 * p.R1) / den;
   var B = (p.w1 - p.w2) * p.R1 * p.R1 * p.R2 * p.R2 / den;
@@ -263,24 +330,34 @@ function drawVec(p, A, B){
     }
   }
 }
-IDS.forEach(function(id){ el('s_' + id).addEventListener('input', draw); });
-el('c_stream').addEventListener('change', draw);
 if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+window.addEventListener('storage', function(e){ if (e.key === KEY) draw(); });
 draw();
 </script>
 </body>
 </html>
 """
 
+
+
+# One embedded widget holds the sticky control panel plus every
+# visualization: v_theta(r) and tau(r) curves, the cross-section vector
+# field, torque, and the Taylor-vortex panel. All math runs as
+# JavaScript in the browser, so dragging a slider morphs everything
+# continuously with no server round-trip.
+
+with st.sidebar:
+    components.html(SIDEBAR_HTML, height=600, scrolling=False)
+
+
 tab_vis, tab_theory = st.tabs(["Visualization", "Theory: derivation without Navier–Stokes"])
 
 with tab_vis:
     st.markdown(
-        "Drag any slider: every plot updates **live in your browser**, no "
-        "server round-trip. The control panel stays pinned on the left while "
-        "you scroll."
+        "Drag any slider in the **sidebar**: every plot updates **live in your browser**, "
+        "no server round-trip. Your settings are remembered between visits."
     )
-    components.html(COUETTE_LIVE_HTML, height=920, scrolling=True)
+    components.html(MAIN_HTML, height=900, scrolling=False)
 
 with tab_theory:
     st.header("Theory: the profile from symmetry, torque balance, and geometry")
