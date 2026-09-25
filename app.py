@@ -19,45 +19,45 @@ def v_theta(r, A, B):
 def omega(r, A, B):
     return A + B / r**2
 
-# ---------------- Sidebar ----------------
-st.sidebar.header("Geometry & Rotation")
-R1 = st.sidebar.slider("Inner radius R1", 0.1, 2.0, 1.0, 0.05)
-R2 = st.sidebar.slider("Outer radius R2", 0.5, 3.0, 2.0, 0.05)
-if R2 <= R1:
-    st.sidebar.error("R2 must be larger than R1")
-    st.stop()
-w1 = st.sidebar.slider("Inner angular velocity ω1 (rad/s)", -5.0, 5.0, 2.0, 0.1)
-w2 = st.sidebar.slider("Outer angular velocity ω2 (rad/s)", -5.0, 5.0, 0.5, 0.1)
-st.sidebar.header("Fluid & Cylinder (Newtonian)")
-mu = st.sidebar.slider("Dynamic viscosity μ (Pa·s)", 0.01, 2.0, 0.5, 0.01)
-rho = st.sidebar.slider("Density ρ (kg/m³)", 100.0, 2000.0, 1000.0, 10.0)
-Lcyl = st.sidebar.slider("Cylinder length L (m)", 0.1, 5.0, 1.0, 0.1)
-n_vec = st.sidebar.slider("Vector field density", 10, 30, 18, 1)
-show_stream = st.sidebar.checkbox("Overlay streamlines", value=True)
+@st.fragment
+def visualization():
+    """Interactive visualization: sliders + every plot live in one fragment,
+    so dragging a slider reruns only this block instead of the whole app."""
+    st.write("Drag a slider — every plot below updates instantly.")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("**Geometry**")
+        R1 = st.slider("Inner radius R1", 0.1, 2.0, 1.0, 0.05)
+        R2 = st.slider("Outer radius R2", 0.5, 3.0, 2.0, 0.05)
+        if R2 <= R1:
+            st.error("R2 must be larger than R1")
+            st.stop()
+    with c2:
+        st.markdown("**Rotation**")
+        w1 = st.slider("Inner angular velocity ω1 (rad/s)", -5.0, 5.0, 2.0, 0.1)
+        w2 = st.slider("Outer angular velocity ω2 (rad/s)", -5.0, 5.0, 0.5, 0.1)
+    with c3:
+        st.markdown("**Fluid & cylinder (Newtonian)**")
+        mu = st.slider("Dynamic viscosity μ (Pa·s)", 0.01, 2.0, 0.5, 0.01)
+        rho = st.slider("Density ρ (kg/m³)", 100.0, 2000.0, 1000.0, 10.0)
+        Lcyl = st.slider("Cylinder length L (m)", 0.1, 5.0, 1.0, 0.1)
+        n_vec = st.slider("Vector field density", 10, 30, 18, 1)
+        show_stream = st.checkbox("Overlay streamlines", value=True)
 
-A, B = couette_coeffs(R1, R2, w1, w2)
-T_torque = -4 * np.pi * mu * Lcyl * B  # N·m, signed
+    A, B = couette_coeffs(R1, R2, w1, w2)
+    T_torque = -4 * np.pi * mu * Lcyl * B  # N·m, signed
 
-# ---------------- Taylor-vortex threshold (narrow-gap criterion) ----------------
-# Convention: Ta = w1^2 * d^3 * R1 / nu^2, critical Ta_c = 1708
-# (narrow-gap limit, outer cylinder at rest; Taylor 1923).
-# Kinematic viscosity nu = mu / rho, hence the density input in the sidebar.
-d_gap = R2 - R1
-nu = mu / rho
-TA_CRIT = 1708.0
-Ta = w1**2 * d_gap**3 * R1 / nu**2 if nu > 0 else float("inf")
-w1_crit = (TA_CRIT * nu**2 / (d_gap**3 * R1)) ** 0.5
-is_laminar = Ta < TA_CRIT
+    # ---------------- Taylor-vortex threshold (narrow-gap criterion) ----------------
+    # Convention: Ta = w1^2 * d^3 * R1 / nu^2, critical Ta_c = 1708
+    # (narrow-gap limit, outer cylinder at rest; Taylor 1923).
+    # Kinematic viscosity nu = mu / rho, hence the density input above.
+    d_gap = R2 - R1
+    nu = mu / rho
+    TA_CRIT = 1708.0
+    Ta = w1**2 * d_gap**3 * R1 / nu**2 if nu > 0 else float("inf")
+    w1_crit = (TA_CRIT * nu**2 / (d_gap**3 * R1)) ** 0.5
+    is_laminar = Ta < TA_CRIT
 
-st.title("Taylor–Couette Flow: Velocity Between Concentric Cylinders")
-st.markdown(
-    "Laminar azimuthal flow in the gap between two independently rotating cylinders. "
-    "Use the sidebar to spin the cylinders and watch the profile respond."
-)
-
-tab_vis, tab_theory = st.tabs(["Visualization", "Theory: derivation without Navier–Stokes"])
-
-with tab_vis:
     col1, col2 = st.columns(2)
 
     r = np.linspace(R1, R2, 300)
@@ -214,6 +214,18 @@ with tab_vis:
     fig3.colorbar(q, ax=ax3, label="speed |v|")
     ax3.legend(loc="upper right")
     st.pyplot(fig3)
+
+
+st.title("Taylor–Couette Flow: Velocity Between Concentric Cylinders")
+st.markdown(
+    "Laminar azimuthal flow in the gap between two independently rotating cylinders. "
+    "Use the controls at the top of the Visualization tab — every plot updates instantly."
+)
+
+tab_vis, tab_theory = st.tabs(["Visualization", "Theory: derivation without Navier–Stokes"])
+
+with tab_vis:
+    visualization()
 
 with tab_theory:
     st.header("Theory: the profile from symmetry, torque balance, and geometry")
