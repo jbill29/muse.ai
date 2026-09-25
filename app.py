@@ -1,26 +1,16 @@
 """Taylor-Couette flow visualizer: velocity profile between concentric rotating cylinders."""
-import numpy as np
 import streamlit as st
-import matplotlib.pyplot as plt
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Taylor-Couette Flow Visualizer", layout="wide")
 
-# ---------------- Physics ----------------
-def couette_coeffs(R1, R2, w1, w2):
-    """Return A, B for v_theta(r) = A*r + B/r."""
-    denom = R2**2 - R1**2
-    A = (w2 * R2**2 - w1 * R1**2) / denom
-    B = (w1 - w2) * R1**2 * R2**2 / denom
-    return A, B
-
-def v_theta(r, A, B):
-    return A * r + B / r
-
-def omega(r, A, B):
-    return A + B / r**2
-
-LIVE_PLOTS_HTML = """<!DOCTYPE html>
+# ---------------- Live widget (browser-side, 60 fps) ----------------
+# One embedded widget holds the sticky control panel plus every
+# visualization: v_theta(r) and tau(r) curves, the cross-section vector
+# field, torque, and the Taylor-vortex panel. All math runs as
+# JavaScript in the browser, so dragging a slider morphs everything
+# continuously with no server round-trip.
+COUETTE_LIVE_HTML = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -29,21 +19,26 @@ LIVE_PLOTS_HTML = """<!DOCTYPE html>
 <style>
   :root{
     --track:#dfe1e6; --lab:#31333f; --val:#31333f; --sub:#6b7280;
-    --accent:#ff4b4b;
+    --accent:#ff4b4b; --box:#f1f5f9;
   }
   @media (prefers-color-scheme: dark){
-    :root{ --track:#3a3d46; --lab:#e8eaf0; --val:#e8eaf0; --sub:#9aa0ae; }
+    :root{ --track:#3a3d46; --lab:#e8eaf0; --val:#e8eaf0; --sub:#9aa0ae; --box:#232838; }
   }
   html, body{ background:transparent; }
   body{
     font-family:"Source Sans Pro",-apple-system,"Segoe UI",Roboto,sans-serif;
     margin:0; color:var(--lab);
   }
-  .wrap{ display:flex; gap:18px; align-items:flex-start; }
-  .side{ width:228px; flex:0 0 228px; padding:6px 2px 0 6px; }
-  .sld{ margin-bottom:16px; }
-  .labrow{ display:flex; justify-content:space-between; align-items:baseline;
-           margin-bottom:2px; }
+  .app{ display:flex; gap:18px; align-items:flex-start; }
+  .panel{
+    width:236px; flex:0 0 236px; padding:8px 4px 8px 8px;
+    position:sticky; top:0; align-self:flex-start;
+    max-height:900px; overflow-y:auto;
+  }
+  .ptitle{ font-size:15px; font-weight:600; margin:2px 0 10px; }
+  .content{ flex:1 1 auto; min-width:0; }
+  .sld{ margin-bottom:13px; }
+  .labrow{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px; }
   .labrow .t{ font-size:14px; color:var(--lab); }
   .labrow .v{ font-size:14px; color:var(--val); font-variant-numeric:tabular-nums; }
   input[type=range]{
@@ -62,315 +57,230 @@ LIVE_PLOTS_HTML = """<!DOCTYPE html>
     background:var(--accent); margin-top:-5px; border:none;
     box-shadow:0 1px 3px rgba(0,0,0,.35);
   }
-  input[type=range]::-moz-range-track{
-    height:4px; border-radius:2px; background:var(--track);
-  }
-  input[type=range]::-moz-range-progress{
-    height:4px; border-radius:2px; background:var(--accent);
-  }
+  input[type=range]::-moz-range-track{ height:4px; border-radius:2px; background:var(--track); }
+  input[type=range]::-moz-range-progress{ height:4px; border-radius:2px; background:var(--accent); }
   input[type=range]::-moz-range-thumb{
     width:14px; height:14px; border:none; border-radius:50%;
     background:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.35);
   }
   input[type=range]:focus{ outline:none; }
-  #ab{ font-size:13px; color:var(--sub); font-variant-numeric:tabular-nums;
-       margin-top:4px; }
+  .chk{ display:flex; align-items:center; gap:8px; font-size:14px; margin:4px 0 10px; cursor:pointer; }
+  .chk input{ accent-color:var(--accent); width:16px; height:16px; cursor:pointer; }
   #warn{ color:#ff6b6b; font-size:13px; margin-top:4px; display:none; }
-  .plots{ flex:1 1 auto; display:flex; gap:8px; min-width:0; }
-  .plots > div{ flex:1 1 0; min-width:0; }
+  .abline{ font-size:14px; color:var(--sub); font-variant-numeric:tabular-nums; margin:4px 0 6px; }
+  .plotrow{ display:flex; gap:8px; }
+  .plotrow > div{ flex:1 1 0; min-width:0; }
+  .note{ font-size:13px; color:var(--sub); margin-top:6px; line-height:1.45; }
+  .vecrow{ display:flex; gap:18px; margin-top:14px; align-items:flex-start; flex-wrap:wrap; }
+  #vecCanvas{ width:460px; max-width:100%; height:auto; }
+  .vecside{ flex:1 1 240px; min-width:240px; }
+  .vtitle{ font-size:16px; font-weight:600; margin-bottom:4px; }
+  .banner{ padding:10px 12px; border-radius:8px; font-weight:600; font-size:14px; margin:12px 0 4px; line-height:1.4; }
+  .banner.ok{ background:#d1fae5; color:#065f46; }
+  .banner.bad{ background:#fee2e2; color:#991b1b; }
+  @media (prefers-color-scheme: dark){
+    .banner.ok{ background:rgba(16,185,129,.16); color:#6ee7b7; }
+    .banner.bad{ background:rgba(239,68,68,.16); color:#fca5a5; }
+  }
+  .mgrid{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  .mbox{ background:var(--box); border-radius:8px; padding:8px 12px; min-width:130px; }
+  .mbox .k{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--sub); }
+  .mbox .n{ font-size:17px; font-weight:600; color:var(--val); font-variant-numeric:tabular-nums; }
+  .mbox .d{ font-size:12px; color:var(--sub); margin-top:2px; }
+  .sec{ font-size:14px; font-weight:600; margin:14px 0 2px; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="side">
-    <div class="sld">
-      <div class="labrow"><span class="t">R&#8321; (m)</span><span class="v" id="oR1">1.00</span></div>
-      <input id="sR1" type="range" min="0.1" max="2" step="0.05" value="1">
-    </div>
-    <div class="sld">
-      <div class="labrow"><span class="t">R&#8322; (m)</span><span class="v" id="oR2">2.00</span></div>
-      <input id="sR2" type="range" min="0.5" max="3" step="0.05" value="2">
-    </div>
-    <div class="sld">
-      <div class="labrow"><span class="t">&omega;&#8321; (rad/s)</span><span class="v" id="ow1">2.0</span></div>
-      <input id="sw1" type="range" min="-5" max="5" step="0.1" value="2">
-    </div>
-    <div class="sld">
-      <div class="labrow"><span class="t">&omega;&#8322; (rad/s)</span><span class="v" id="ow2">0.5</span></div>
-      <input id="sw2" type="range" min="-5" max="5" step="0.1" value="0.5">
-    </div>
-    <div class="sld">
-      <div class="labrow"><span class="t">&mu; (Pa&middot;s)</span><span class="v" id="omu">0.50</span></div>
-      <input id="smu" type="range" min="0.01" max="2" step="0.01" value="0.5">
-    </div>
-    <div id="ab"></div>
+<div class="app">
+  <div class="panel">
+    <div class="ptitle">Controls</div>
+    <div class="sld"><div class="labrow"><span class="t">R&#8321; (m)</span><span class="v" id="o_R1"></span></div>
+      <input id="s_R1" type="range" min="0.1" max="2" step="0.05" value="1" data-dec="2"></div>
+    <div class="sld"><div class="labrow"><span class="t">R&#8322; (m)</span><span class="v" id="o_R2"></span></div>
+      <input id="s_R2" type="range" min="0.5" max="3" step="0.05" value="2" data-dec="2"></div>
+    <div class="sld"><div class="labrow"><span class="t">&omega;&#8321; (rad/s)</span><span class="v" id="o_w1"></span></div>
+      <input id="s_w1" type="range" min="-5" max="5" step="0.1" value="2" data-dec="1"></div>
+    <div class="sld"><div class="labrow"><span class="t">&omega;&#8322; (rad/s)</span><span class="v" id="o_w2"></span></div>
+      <input id="s_w2" type="range" min="-5" max="5" step="0.1" value="0.5" data-dec="1"></div>
+    <div class="sld"><div class="labrow"><span class="t">&mu; (Pa&middot;s)</span><span class="v" id="o_mu"></span></div>
+      <input id="s_mu" type="range" min="0.01" max="2" step="0.01" value="0.5" data-dec="2"></div>
+    <div class="sld"><div class="labrow"><span class="t">&rho; (kg/m&sup3;)</span><span class="v" id="o_rho"></span></div>
+      <input id="s_rho" type="range" min="500" max="2000" step="10" value="1000" data-dec="0"></div>
+    <div class="sld"><div class="labrow"><span class="t">Length L (m)</span><span class="v" id="o_Lcyl"></span></div>
+      <input id="s_Lcyl" type="range" min="0.1" max="2" step="0.05" value="1" data-dec="2"></div>
+    <div class="sld"><div class="labrow"><span class="t">Vector density</span><span class="v" id="o_nvec"></span></div>
+      <input id="s_nvec" type="range" min="8" max="24" step="1" value="14" data-dec="0"></div>
+    <label class="chk"><input type="checkbox" id="c_stream" checked> Overlay streamlines</label>
     <div id="warn">Need R&#8322; &gt; R&#8321; &mdash; widen the outer radius or shrink the inner one.</div>
   </div>
-  <div class="plots">
-    <div id="plotV"></div>
-    <div id="plotT"></div>
+  <div class="content">
+    <div class="abline" id="abLine"></div>
+    <div class="plotrow"><div id="plotV"></div><div id="plotT"></div></div>
+    <div class="note">Shear magnitude is largest at the inner wall; the sign gives the stress direction relative to +&theta;.</div>
+    <div class="vecrow">
+      <canvas id="vecCanvas" width="460" height="460"></canvas>
+      <div class="vecside">
+        <div class="vtitle">Cross-section vector field (r&ndash;&theta; plane)</div>
+        <div class="note">Arrows show the local fluid velocity. Length is proportional to speed; color (viridis) also encodes speed.</div>
+        <div class="sec">Torque transmitted through the fluid</div>
+        <div class="mgrid" id="torqueM"></div>
+        <div class="sec">Taylor-vortex threshold</div>
+        <div class="banner" id="taylorBanner"></div>
+        <div class="mgrid" id="taylorM"></div>
+        <div class="note">Ta = &omega;&#8321;&sup2;d&sup3;R&#8321;/&nu;&sup2;, critical 1708 (narrow-gap, outer cylinder at rest). Spin the inner cylinder fast enough and the smooth laminar flow breaks into stacked Taylor vortices.</div>
+      </div>
+    </div>
   </div>
 </div>
 <script>
-function val(id){ return parseFloat(document.getElementById(id).value); }
-function paintTrack(el){
-  var p = (el.value - el.min) / (el.max - el.min) * 100;
-  el.style.setProperty('--p', p + '%');
+var IDS = ['R1','R2','w1','w2','mu','rho','Lcyl','nvec'];
+function el(id){ return document.getElementById(id); }
+function sval(id){ return parseFloat(el('s_'+id).value); }
+function refreshSlider(id){
+  var s = el('s_'+id);
+  var dec = parseInt(s.getAttribute('data-dec') || '2', 10);
+  el('o_'+id).textContent = parseFloat(s.value).toFixed(dec);
+  s.style.setProperty('--p', ((s.value - s.min) / (s.max - s.min) * 100) + '%');
 }
-function dark(){ return window.matchMedia('(prefers-color-scheme: dark)').matches; }
+function isDark(){ return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
+function themed(title){
+  var d = isDark(), grid = d ? '#2e3138' : '#e5e7eb';
+  return {
+    title: title, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+    font: { family: '"Source Sans Pro",sans-serif', color: d ? '#e8eaf0' : '#31333f' },
+    xaxis: { gridcolor: grid, zerolinecolor: grid },
+    yaxis: { gridcolor: grid, zerolinecolor: grid },
+    margin: { l: 55, r: 10, t: 40, b: 40 }
+  };
+}
+/* viridis colormap stops */
+var VIR = [[68,1,84],[72,35,116],[64,67,135],[52,94,141],[41,120,142],[32,144,140],
+           [34,167,133],[68,190,112],[121,209,81],[189,222,38],[253,231,37]];
+function vcolor(t){
+  t = Math.max(0, Math.min(1, t));
+  var x = t * (VIR.length - 1), i = Math.floor(x), f = x - i;
+  var a = VIR[i], b = VIR[Math.min(i + 1, VIR.length - 1)];
+  function c(k){ return Math.round(a[k] + (b[k] - a[k]) * f); }
+  return 'rgb(' + c(0) + ',' + c(1) + ',' + c(2) + ')';
+}
+function params(){
+  return {
+    R1: sval('R1'), R2: sval('R2'), w1: sval('w1'), w2: sval('w2'),
+    mu: sval('mu'), rho: sval('rho'), Lcyl: sval('Lcyl'),
+    nvec: Math.round(sval('nvec')), showStream: el('c_stream').checked
+  };
+}
 function draw(){
-  var R1 = val('sR1'), R2 = val('sR2'), w1 = val('sw1'),
-      w2 = val('sw2'), mu = val('smu');
-  document.getElementById('oR1').textContent = R1.toFixed(2);
-  document.getElementById('oR2').textContent = R2.toFixed(2);
-  document.getElementById('ow1').textContent = w1.toFixed(1);
-  document.getElementById('ow2').textContent = w2.toFixed(1);
-  document.getElementById('omu').textContent = mu.toFixed(2);
-  ['sR1','sR2','sw1','sw2','smu'].forEach(function(id){
-    paintTrack(document.getElementById(id));
-  });
-  var warn = document.getElementById('warn');
-  if (R2 <= R1){ warn.style.display = 'block'; return; }
+  IDS.forEach(refreshSlider);
+  var p = params(), warn = el('warn');
+  if (p.R2 <= p.R1){ warn.style.display = 'block'; return; }
   warn.style.display = 'none';
-  var den = R2*R2 - R1*R1;
-  var A = (w2*R2*R2 - w1*R1*R1) / den;
-  var B = (w1 - w2)*R1*R1*R2*R2 / den;
-  document.getElementById('ab').textContent = 'A = ' + A.toFixed(3) + '    B = ' + B.toFixed(3);
-  var N = 240, r = [], v = [], tau = [];
-  for (var i = 0; i < N; i++){
-    var ri = R1 + (R2 - R1)*i/(N - 1);
-    r.push(ri);
-    v.push(A*ri + B/ri);
-    tau.push(-2*mu*B/(ri*ri));
+  var den = p.R2 * p.R2 - p.R1 * p.R1;
+  var A = (p.w2 * p.R2 * p.R2 - p.w1 * p.R1 * p.R1) / den;
+  var B = (p.w1 - p.w2) * p.R1 * p.R1 * p.R2 * p.R2 / den;
+  /* --- line plots --- */
+  var N = 240, r = [], v = [], tau = [], i, ri;
+  for (i = 0; i < N; i++){
+    ri = p.R1 + (p.R2 - p.R1) * i / (N - 1);
+    r.push(ri); v.push(A * ri + B / ri); tau.push(-2 * p.mu * B / (ri * ri));
   }
-  var isDark = dark();
-  var grid = isDark ? '#2e3138' : '#e5e7eb';
-  var wallColor = isDark ? '#8a8f98' : 'gray';
-  var walls = [
-    {type:'line', x0:R1, x1:R1, y0:0, y1:1, yref:'paper',
-     line:{dash:'dash', color:wallColor, width:1}},
-    {type:'line', x0:R2, x1:R2, y0:0, y1:1, yref:'paper',
-     line:{dash:'dash', color:wallColor, width:1}}
-  ];
-  function layout(title, yt){
-    return {
-      title: title,
-      xaxis: {title:'r', gridcolor:grid, zerolinecolor:grid},
-      yaxis: {title:yt, gridcolor:grid, zerolinecolor:grid},
-      shapes: walls,
-      margin: {l:55, r:10, t:45, b:40},
-      height: 420,
-      paper_bgcolor: 'rgba(0,0,0,0)',
-      plot_bgcolor: 'rgba(0,0,0,0)',
-      font: {family:'"Source Sans Pro",sans-serif',
-             color: isDark ? '#e8eaf0' : '#31333f'}
-    };
-  }
-  var cfg = {displayModeBar:true, responsive:true};
-  Plotly.react('plotV',
-    [{x:r, y:v, mode:'lines', line:{width:3, color:'#1f77b4'}}],
-    layout('Azimuthal velocity across the gap', 'v\u03b8(r)'), cfg);
-  Plotly.react('plotT',
-    [{x:r, y:tau, mode:'lines', line:{width:3, color:'#ff7f0e'}}],
-    layout('Shear stress across the gap', '\u03c4(r)'), cfg);
+  var dark = isDark(), wallC = dark ? '#8a8f98' : 'gray';
+  var walls = [p.R1, p.R2].map(function(x){
+    return { type: 'line', x0: x, x1: x, y0: 0, y1: 1, yref: 'paper',
+             line: { dash: 'dash', color: wallC, width: 1 } };
+  });
+  var cfg = { displayModeBar: true, responsive: true };
+  var L1 = themed('Azimuthal velocity across the gap');
+  L1.xaxis.title = 'r'; L1.yaxis.title = 'v\u03b8(r)'; L1.shapes = walls; L1.height = 320;
+  Plotly.react('plotV', [{ x: r, y: v, mode: 'lines', line: { width: 3, color: '#1f77b4' } }], L1, cfg);
+  var L2 = themed('Shear stress across the gap');
+  L2.xaxis.title = 'r'; L2.yaxis.title = '\u03c4(r)'; L2.shapes = walls; L2.height = 320;
+  Plotly.react('plotT', [{ x: r, y: tau, mode: 'lines', line: { width: 3, color: '#ff7f0e' } }], L2, cfg);
+  /* --- vector field on canvas --- */
+  drawVec(p, A, B);
+  /* --- readouts --- */
+  var Tt = 4 * Math.PI * p.mu * p.Lcyl * Math.abs(B);
+  el('abLine').textContent = 'v\u03b8(r) = A\u00b7r + B/r   with   A = ' + A.toFixed(3) + ',   B = ' + B.toFixed(3);
+  el('torqueM').innerHTML =
+    '<div class="mbox"><div class="k">Torque |T|</div><div class="n">' + Tt.toFixed(4) +
+    ' N\u00b7m</div><div class="d">Same at every radius (angular-momentum balance)</div></div>';
+  var nu = p.mu / p.rho, d = p.R2 - p.R1, TaCrit = 1708;
+  var Ta = p.w1 * p.w1 * d * d * d * p.R1 / (nu * nu);
+  var w1c = Math.sqrt(TaCrit * nu * nu / (d * d * d * p.R1));
+  var lam = Ta < TaCrit, bn = el('taylorBanner');
+  bn.className = 'banner ' + (lam ? 'ok' : 'bad');
+  bn.textContent = lam
+    ? 'LAMINAR \u2014 Taylor number below critical; the profile above applies.'
+    : 'TAYLOR VORTICES expected \u2014 Taylor number above critical; the laminar profile above no longer describes the flow.';
+  el('taylorM').innerHTML =
+    '<div class="mbox"><div class="k">Taylor number Ta</div><div class="n">' + Ta.toPrecision(4) +
+    '</div></div>' +
+    '<div class="mbox"><div class="k">Critical inner speed \u03c9\u2081,c</div><div class="n">' +
+    w1c.toFixed(4) + ' rad/s</div></div>';
 }
-document.querySelectorAll('input[type=range]').forEach(function(el){
-  el.addEventListener('input', draw);
-});
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+function drawVec(p, A, B){
+  var cv = el('vecCanvas'), ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  var cx = W / 2, cy = H / 2, dark = isDark();
+  var ext = p.R2 * 1.15, sc = (Math.min(W, H) / 2 - 12) / ext;
+  function X(x){ return cx + x * sc; }
+  function Y(y){ return cy - y * sc; }
+  ctx.lineWidth = 3; ctx.strokeStyle = dark ? '#cbd5e1' : '#0f172a';
+  [p.R1, p.R2].forEach(function(rr){
+    ctx.beginPath(); ctx.arc(cx, cy, rr * sc, 0, Math.PI * 2); ctx.stroke();
+  });
+  var n = p.nvec, x0 = -p.R2 * 1.1, dx = (2 * p.R2 * 1.1) / (n - 1);
+  var pts = [], vmax = 0, i, j;
+  for (i = 0; i < n; i++) for (j = 0; j < n; j++){
+    var bx = x0 + dx * i, by = x0 + dx * j, rr = Math.sqrt(bx * bx + by * by);
+    if (rr < p.R1 || rr > p.R2) continue;
+    var th = Math.atan2(by, bx), vv = A * rr + B / rr, sp = Math.abs(vv);
+    pts.push({ bx: bx, by: by, vx: -vv * Math.sin(th), vy: vv * Math.cos(th), sp: sp });
+    if (sp > vmax) vmax = sp;
+  }
+  if (vmax <= 0) vmax = 1;
+  var k = 0.8 * dx / vmax;
+  pts.forEach(function(q){
+    if (q.sp < 1e-9 * vmax) return;
+    var ux = q.vx * k, uy = q.vy * k;
+    var x1 = X(q.bx - ux / 2), y1 = Y(q.by - uy / 2);
+    var x2 = X(q.bx + ux / 2), y2 = Y(q.by + uy / 2);
+    var ang = Math.atan2(y2 - y1, x2 - x1);
+    var hl = Math.min(9, 0.35 * Math.hypot(x2 - x1, y2 - y1));
+    ctx.strokeStyle = vcolor(q.sp / vmax); ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x2, y2); ctx.lineTo(x2 - hl * Math.cos(ang - 0.42), y2 - hl * Math.sin(ang - 0.42));
+    ctx.moveTo(x2, y2); ctx.lineTo(x2 - hl * Math.cos(ang + 0.42), y2 - hl * Math.sin(ang + 0.42));
+    ctx.stroke();
+  });
+  if (p.showStream){
+    ctx.strokeStyle = dark ? 'rgba(255,255,255,0.5)' : 'rgba(100,116,139,0.55)';
+    ctx.lineWidth = 1;
+    for (var s = 1; s < 12; s++){
+      var rs = p.R1 + (p.R2 - p.R1) * s / 12;
+      ctx.beginPath(); ctx.arc(cx, cy, rs * sc, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+}
+IDS.forEach(function(id){ el('s_' + id).addEventListener('input', draw); });
+el('c_stream').addEventListener('change', draw);
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
 draw();
 </script>
 </body>
 </html>
 """
 
-
-@st.fragment
-def visualization():
-    """Interactive visualization: sliders + every plot live in one fragment,
-    so dragging a slider reruns only this block instead of the whole app."""
-    st.write("Drag a slider — every plot below updates instantly.")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("**Geometry**")
-        R1 = st.slider("Inner radius R1", 0.1, 2.0, 1.0, 0.05)
-        R2 = st.slider("Outer radius R2", 0.5, 3.0, 2.0, 0.05)
-        if R2 <= R1:
-            st.error("R2 must be larger than R1")
-            st.stop()
-    with c2:
-        st.markdown("**Rotation**")
-        w1 = st.slider("Inner angular velocity ω1 (rad/s)", -5.0, 5.0, 2.0, 0.1)
-        w2 = st.slider("Outer angular velocity ω2 (rad/s)", -5.0, 5.0, 0.5, 0.1)
-    with c3:
-        st.markdown("**Fluid & cylinder (Newtonian)**")
-        mu = st.slider("Dynamic viscosity μ (Pa·s)", 0.01, 2.0, 0.5, 0.01)
-        rho = st.slider("Density ρ (kg/m³)", 100.0, 2000.0, 1000.0, 10.0)
-        Lcyl = st.slider("Cylinder length L (m)", 0.1, 5.0, 1.0, 0.1)
-        n_vec = st.slider("Vector field density", 10, 30, 18, 1)
-        show_stream = st.checkbox("Overlay streamlines", value=True)
-
-    A, B = couette_coeffs(R1, R2, w1, w2)
-    T_torque = -4 * np.pi * mu * Lcyl * B  # N·m, signed
-
-    # ---------------- Taylor-vortex threshold (narrow-gap criterion) ----------------
-    # Convention: Ta = w1^2 * d^3 * R1 / nu^2, critical Ta_c = 1708
-    # (narrow-gap limit, outer cylinder at rest; Taylor 1923).
-    # Kinematic viscosity nu = mu / rho, hence the density input above.
-    d_gap = R2 - R1
-    nu = mu / rho
-    TA_CRIT = 1708.0
-    Ta = w1**2 * d_gap**3 * R1 / nu**2 if nu > 0 else float("inf")
-    w1_crit = (TA_CRIT * nu**2 / (d_gap**3 * R1)) ** 0.5
-    is_laminar = Ta < TA_CRIT
-
-    st.subheader("Live playground \u2014 velocity & shear stress")
-    st.caption(
-        "Drag the sliders: both curves morph in real time, computed entirely in "
-        "your browser with no server round-trip. These sliders drive only these "
-        "two plots; the controls above drive the vector field, torque, and "
-        "Taylor panel below."
-    )
-    components.html(LIVE_PLOTS_HTML, height=500, scrolling=False)
-
-    st.latex(r"v_\theta(r) = A r + \frac{B}{r}")
-    st.latex(
-        r"A = \frac{\omega_2 R_2^2 - \omega_1 R_1^2}{R_2^2 - R_1^2}"
-        r",\quad B = \frac{(\omega_1 - \omega_2) R_1^2 R_2^2}{R_2^2 - R_1^2}"
-    )
-    st.latex(r"\tau(r) = \mu\,r\,\frac{d\Omega}{dr} = -\frac{2\,\mu\,B}{r^2}")
-    st.write(
-        f"Values from the controls above: A = {A:.3f}, B = {B:.3f}, "
-        f"T = {T_torque:.4f} N\u00b7m. Shear magnitude is largest at the inner wall; "
-        "the sign gives the stress direction relative to +\u03b8."
-    )
-
-    st.subheader("Torque transmitted through the fluid")
-    st.latex(r"T = -4\,\pi\,\mu\,L\,B")
-    st.metric(
-        "Torque |T|",
-        f"{abs(T_torque):.4f} N·m",
-        help="Same at every radius in steady flow (angular-momentum balance).",
-    )
-    st.caption(
-        f"μ = {mu} Pa·s, L = {Lcyl} m. "
-        "The sign of T indicates direction; the magnitude is what the motor must supply."
-    )
-
-    st.subheader("Taylor-vortex threshold")
-    st.markdown(
-        "Spin the inner cylinder fast enough and the smooth laminar flow above "
-        "breaks down into a stack of donut-shaped Taylor vortices. This panel flags "
-        "whether your current settings stay laminar."
-    )
-    if is_laminar:
-        st.success("LAMINAR — Taylor number below critical; the profile above applies.")
-    else:
-        st.error(
-            "TAYLOR VORTICES expected — Taylor number above critical; "
-            "the laminar profile above no longer describes the flow."
-        )
-    tcol1, tcol2 = st.columns(2)
-    with tcol1:
-        st.metric(
-            "Taylor number Ta",
-            f"{Ta:.4g}",
-            help="Ta = ω1² d³ R1 / ν². Laminar while Ta < 1708.",
-        )
-    with tcol2:
-        st.metric(
-            "Critical inner speed ω1,c",
-            f"{w1_crit:.4g} rad/s",
-            help="Inner-cylinder speed at which Ta reaches 1708 for this geometry and fluid.",
-        )
-    st.latex(r"Ta = \frac{\omega_1^2\, d^3\, R_1}{\nu^2}, \qquad Ta_c = 1708")
-    st.markdown(
-        "**Why it happens (geometric picture).** Picture a thin ring of fluid nudged "
-        "slightly outward. Out there its neighbors move more slowly, but the displaced "
-        "ring keeps its faster spin — so centrifugal force flings it further outward, "
-        "while slower fluid sinks inward to take its place. Viscosity tries to smear "
-        "this motion out, and at gentle spin rates it wins. Past a critical rate the "
-        "centrifugal imbalance wins instead, and the runaway motion rolls up into a "
-        "stack of donut-shaped vortices."
-    )
-    st.caption(
-        "Convention: Ta = ω1²d³R1/ν² with critical value 1708 (narrow-gap limit, outer "
-        "cylinder at rest). Approximate when the gap is wide or ω2 ≠ 0 — counter-rotation "
-        "and wide gaps shift the true threshold."
-    )
-
-    st.subheader("Cross-section vector field (r–θ plane)")
-    st.markdown(
-        "Arrows show the local fluid velocity. Their length is proportional to speed; "
-        "color also encodes speed."
-    )
-    # Vector field on a Cartesian grid, masked to the annulus
-    n = n_vec
-    x = np.linspace(-R2 * 1.1, R2 * 1.1, n)
-    y = np.linspace(-R2 * 1.1, R2 * 1.1, n)
-    X, Y = np.meshgrid(x, y)
-    Rs = np.sqrt(X**2 + Y**2)
-    mask = (Rs >= R1) & (Rs <= R2)
-    Theta = np.arctan2(Y, X)
-    Vt = np.full_like(Rs, np.nan)
-    Vt[mask] = v_theta(Rs[mask], A, B)
-    Vx = np.full_like(Rs, np.nan)
-    Vy = np.full_like(Rs, np.nan)
-    Vx[mask] = -Vt[mask] * np.sin(Theta[mask])
-    Vy[mask] = Vt[mask] * np.cos(Theta[mask])
-    speed = np.sqrt(Vx**2 + Vy**2)
-
-    # Arrow sizing: normalize so the longest arrow spans 0.8x the grid
-    # spacing. This guarantees no excessive overlap at any slider setting,
-    # while color still encodes the absolute speed.
-    dx = float(x[1] - x[0])
-    vmax = float(np.nanmax(speed)) if np.any(mask) else 0.0
-    if vmax > 0:
-        _s = 0.8 * dx / vmax
-        Ux, Uy = Vx * _s, Vy * _s
-    else:
-        Ux, Uy = Vx, Vy
-
-    fig3, ax3 = plt.subplots(figsize=(7, 7))
-    # draw cylinder walls
-    th = np.linspace(0, 2 * np.pi, 200)
-    ax3.plot(R1 * np.cos(th), R1 * np.sin(th), "k-", lw=3, label="Inner wall")
-    ax3.plot(R2 * np.cos(th), R2 * np.sin(th), "k-", lw=3, label="Outer wall")
-    q = ax3.quiver(
-        X, Y, Ux, Uy, speed,
-        cmap="viridis", scale=1, scale_units="xy",
-        width=0.012, pivot="mid",
-    )
-    if show_stream:
-        # Streamlines of purely azimuthal flow are exact circles r = const,
-        # so draw them analytically. (streamplot requires a rectangular grid
-        # and rejects the polar grid used here.)
-        for rr in np.linspace(R1, R2, 14)[1:-1]:
-            ax3.plot(
-                rr * np.cos(th), rr * np.sin(th),
-                color="white", lw=0.7, alpha=0.85,
-            )
-    ax3.set_aspect("equal")
-    ax3.set_xlim(-R2 * 1.15, R2 * 1.15)
-    ax3.set_ylim(-R2 * 1.15, R2 * 1.15)
-    ax3.set_xlabel("x")
-    ax3.set_ylabel("y")
-    ax3.set_title("Velocity vectors in the annulus")
-    fig3.colorbar(q, ax=ax3, label="speed |v|")
-    ax3.legend(loc="upper right")
-    st.pyplot(fig3)
-
-
-st.title("Taylor–Couette Flow: Velocity Between Concentric Cylinders")
-st.markdown(
-    "Laminar azimuthal flow in the gap between two independently rotating cylinders. "
-    "Use the controls at the top of the Visualization tab — every plot updates instantly."
-)
-
 tab_vis, tab_theory = st.tabs(["Visualization", "Theory: derivation without Navier–Stokes"])
 
 with tab_vis:
-    visualization()
+    st.markdown(
+        "Drag any slider: every plot updates **live in your browser**, no "
+        "server round-trip. The control panel stays pinned on the left while "
+        "you scroll."
+    )
+    components.html(COUETTE_LIVE_HTML, height=920, scrolling=True)
 
 with tab_theory:
     st.header("Theory: the profile from symmetry, torque balance, and geometry")
@@ -465,3 +375,4 @@ with tab_theory:
         "transmitted through the fluid — one number, same at every radius."
     )
     st.latex(r"T = -4\pi\,\mu\,L\,B")
+
