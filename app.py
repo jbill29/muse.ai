@@ -24,38 +24,100 @@ LIVE_PLOTS_HTML = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
-  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; }
-  .sliders { display: flex; flex-wrap: wrap; gap: 10px 26px; padding: 2px 8px 6px; }
-  .ctl { display: flex; align-items: center; gap: 8px; }
-  .ctl label { font-size: 13px; white-space: nowrap; min-width: 78px; color: #333; }
-  .ctl output { font-size: 13px; min-width: 46px; text-align: right;
-                font-variant-numeric: tabular-nums; color: #111; }
-  .ctl input[type=range] { width: 130px; accent-color: #1f77b4; cursor: pointer; }
-  #warn { color: #b00020; font-size: 13px; padding: 0 8px 4px; display: none; }
-  #ab { font-size: 13px; padding: 0 8px 2px; color: #555;
-        font-variant-numeric: tabular-nums; }
-  .plots { display: flex; gap: 8px; }
-  .plots > div { flex: 1; min-width: 0; }
+  :root{
+    --track:#dfe1e6; --lab:#31333f; --val:#31333f; --sub:#6b7280;
+    --accent:#ff4b4b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --track:#3a3d46; --lab:#e8eaf0; --val:#e8eaf0; --sub:#9aa0ae; }
+  }
+  html, body{ background:transparent; }
+  body{
+    font-family:"Source Sans Pro",-apple-system,"Segoe UI",Roboto,sans-serif;
+    margin:0; color:var(--lab);
+  }
+  .wrap{ display:flex; gap:18px; align-items:flex-start; }
+  .side{ width:228px; flex:0 0 228px; padding:6px 2px 0 6px; }
+  .sld{ margin-bottom:16px; }
+  .labrow{ display:flex; justify-content:space-between; align-items:baseline;
+           margin-bottom:2px; }
+  .labrow .t{ font-size:14px; color:var(--lab); }
+  .labrow .v{ font-size:14px; color:var(--val); font-variant-numeric:tabular-nums; }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:20px; background:transparent; cursor:pointer; margin:0;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:4px; border-radius:2px;
+    background:linear-gradient(to right,
+      var(--accent) 0%, var(--accent) var(--p,50%),
+      var(--track) var(--p,50%), var(--track) 100%);
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:14px; height:14px; border-radius:50%;
+    background:var(--accent); margin-top:-5px; border:none;
+    box-shadow:0 1px 3px rgba(0,0,0,.35);
+  }
+  input[type=range]::-moz-range-track{
+    height:4px; border-radius:2px; background:var(--track);
+  }
+  input[type=range]::-moz-range-progress{
+    height:4px; border-radius:2px; background:var(--accent);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border:none; border-radius:50%;
+    background:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.35);
+  }
+  input[type=range]:focus{ outline:none; }
+  #ab{ font-size:13px; color:var(--sub); font-variant-numeric:tabular-nums;
+       margin-top:4px; }
+  #warn{ color:#ff6b6b; font-size:13px; margin-top:4px; display:none; }
+  .plots{ flex:1 1 auto; display:flex; gap:8px; min-width:0; }
+  .plots > div{ flex:1 1 0; min-width:0; }
 </style>
 </head>
 <body>
-<div class="sliders">
-  <div class="ctl"><label>R&#8321; (m)</label><input id="sR1" type="range" min="0.1" max="2" step="0.05" value="1"><output id="oR1">1.00</output></div>
-  <div class="ctl"><label>R&#8322; (m)</label><input id="sR2" type="range" min="0.5" max="3" step="0.05" value="2"><output id="oR2">2.00</output></div>
-  <div class="ctl"><label>&omega;&#8321; (rad/s)</label><input id="sw1" type="range" min="-5" max="5" step="0.1" value="2"><output id="ow1">2.0</output></div>
-  <div class="ctl"><label>&omega;&#8322; (rad/s)</label><input id="sw2" type="range" min="-5" max="5" step="0.1" value="0.5"><output id="ow2">0.5</output></div>
-  <div class="ctl"><label>&mu; (Pa&middot;s)</label><input id="smu" type="range" min="0.01" max="2" step="0.01" value="0.5"><output id="omu">0.50</output></div>
-</div>
-<div id="warn">Need R&#8322; &gt; R&#8321; &mdash; widen the outer radius or shrink the inner one.</div>
-<div id="ab"></div>
-<div class="plots">
-  <div id="plotV"></div>
-  <div id="plotT"></div>
+<div class="wrap">
+  <div class="side">
+    <div class="sld">
+      <div class="labrow"><span class="t">R&#8321; (m)</span><span class="v" id="oR1">1.00</span></div>
+      <input id="sR1" type="range" min="0.1" max="2" step="0.05" value="1">
+    </div>
+    <div class="sld">
+      <div class="labrow"><span class="t">R&#8322; (m)</span><span class="v" id="oR2">2.00</span></div>
+      <input id="sR2" type="range" min="0.5" max="3" step="0.05" value="2">
+    </div>
+    <div class="sld">
+      <div class="labrow"><span class="t">&omega;&#8321; (rad/s)</span><span class="v" id="ow1">2.0</span></div>
+      <input id="sw1" type="range" min="-5" max="5" step="0.1" value="2">
+    </div>
+    <div class="sld">
+      <div class="labrow"><span class="t">&omega;&#8322; (rad/s)</span><span class="v" id="ow2">0.5</span></div>
+      <input id="sw2" type="range" min="-5" max="5" step="0.1" value="0.5">
+    </div>
+    <div class="sld">
+      <div class="labrow"><span class="t">&mu; (Pa&middot;s)</span><span class="v" id="omu">0.50</span></div>
+      <input id="smu" type="range" min="0.01" max="2" step="0.01" value="0.5">
+    </div>
+    <div id="ab"></div>
+    <div id="warn">Need R&#8322; &gt; R&#8321; &mdash; widen the outer radius or shrink the inner one.</div>
+  </div>
+  <div class="plots">
+    <div id="plotV"></div>
+    <div id="plotT"></div>
+  </div>
 </div>
 <script>
 function val(id){ return parseFloat(document.getElementById(id).value); }
+function paintTrack(el){
+  var p = (el.value - el.min) / (el.max - el.min) * 100;
+  el.style.setProperty('--p', p + '%');
+}
+function dark(){ return window.matchMedia('(prefers-color-scheme: dark)').matches; }
 function draw(){
   var R1 = val('sR1'), R2 = val('sR2'), w1 = val('sw1'),
       w2 = val('sw2'), mu = val('smu');
@@ -64,13 +126,16 @@ function draw(){
   document.getElementById('ow1').textContent = w1.toFixed(1);
   document.getElementById('ow2').textContent = w2.toFixed(1);
   document.getElementById('omu').textContent = mu.toFixed(2);
+  ['sR1','sR2','sw1','sw2','smu'].forEach(function(id){
+    paintTrack(document.getElementById(id));
+  });
   var warn = document.getElementById('warn');
   if (R2 <= R1){ warn.style.display = 'block'; return; }
   warn.style.display = 'none';
   var den = R2*R2 - R1*R1;
   var A = (w2*R2*R2 - w1*R1*R1) / den;
   var B = (w1 - w2)*R1*R1*R2*R2 / den;
-  document.getElementById('ab').textContent = 'A = ' + A.toFixed(3) + ',   B = ' + B.toFixed(3);
+  document.getElementById('ab').textContent = 'A = ' + A.toFixed(3) + '    B = ' + B.toFixed(3);
   var N = 240, r = [], v = [], tau = [];
   for (var i = 0; i < N; i++){
     var ri = R1 + (R2 - R1)*i/(N - 1);
@@ -78,27 +143,41 @@ function draw(){
     v.push(A*ri + B/ri);
     tau.push(-2*mu*B/(ri*ri));
   }
+  var isDark = dark();
+  var grid = isDark ? '#2e3138' : '#e5e7eb';
+  var wallColor = isDark ? '#8a8f98' : 'gray';
   var walls = [
     {type:'line', x0:R1, x1:R1, y0:0, y1:1, yref:'paper',
-     line:{dash:'dash', color:'gray', width:1}},
+     line:{dash:'dash', color:wallColor, width:1}},
     {type:'line', x0:R2, x1:R2, y0:0, y1:1, yref:'paper',
-     line:{dash:'dash', color:'gray', width:1}}
+     line:{dash:'dash', color:wallColor, width:1}}
   ];
-  var cfg = {displayModeBar: true, responsive: true};
+  function layout(title, yt){
+    return {
+      title: title,
+      xaxis: {title:'r', gridcolor:grid, zerolinecolor:grid},
+      yaxis: {title:yt, gridcolor:grid, zerolinecolor:grid},
+      shapes: walls,
+      margin: {l:55, r:10, t:45, b:40},
+      height: 420,
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: {family:'"Source Sans Pro",sans-serif',
+             color: isDark ? '#e8eaf0' : '#31333f'}
+    };
+  }
+  var cfg = {displayModeBar:true, responsive:true};
   Plotly.react('plotV',
     [{x:r, y:v, mode:'lines', line:{width:3, color:'#1f77b4'}}],
-    {title:'Azimuthal velocity across the gap',
-     xaxis:{title:'r'}, yaxis:{title:'v\u03b8(r)'},
-     shapes: walls, margin:{l:55, r:10, t:45, b:40}, height:400}, cfg);
+    layout('Azimuthal velocity across the gap', 'v\u03b8(r)'), cfg);
   Plotly.react('plotT',
     [{x:r, y:tau, mode:'lines', line:{width:3, color:'#ff7f0e'}}],
-    {title:'Shear stress across the gap',
-     xaxis:{title:'r'}, yaxis:{title:'\u03c4(r)'},
-     shapes: walls, margin:{l:55, r:10, t:45, b:40}, height:400}, cfg);
+    layout('Shear stress across the gap', '\u03c4(r)'), cfg);
 }
 document.querySelectorAll('input[type=range]').forEach(function(el){
   el.addEventListener('input', draw);
 });
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
 draw();
 </script>
 </body>
@@ -152,7 +231,7 @@ def visualization():
         "two plots; the controls above drive the vector field, torque, and "
         "Taylor panel below."
     )
-    components.html(LIVE_PLOTS_HTML, height=640, scrolling=False)
+    components.html(LIVE_PLOTS_HTML, height=500, scrolling=False)
 
     st.latex(r"v_\theta(r) = A r + \frac{B}{r}")
     st.latex(
