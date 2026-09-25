@@ -2,6 +2,7 @@
 import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Taylor-Couette Flow Visualizer", layout="wide")
 
@@ -65,15 +66,17 @@ def visualization():
 
     with col1:
         st.subheader("Velocity profile vθ(r)")
-        fig1, ax1 = plt.subplots(figsize=(5, 4))
-        ax1.plot(r, v, lw=2.5)
-        ax1.axvline(R1, color="gray", ls="--", alpha=0.6)
-        ax1.axvline(R2, color="gray", ls="--", alpha=0.6)
-        ax1.set_xlabel("r")
-        ax1.set_ylabel("vθ(r)")
-        ax1.set_title("Azimuthal velocity across the gap")
-        ax1.grid(alpha=0.3)
-        st.pyplot(fig1)
+        fig1 = go.Figure()
+        fig1.add_trace(go.Scatter(x=r, y=v, mode="lines",
+                                 line=dict(width=3), name="vθ(r)"))
+        for wall in (R1, R2):
+            fig1.add_vline(x=wall, line_dash="dash", line_color="gray", opacity=0.6)
+        fig1.update_layout(title="Azimuthal velocity across the gap",
+                           xaxis_title="r", yaxis_title="vθ(r)",
+                           xaxis=dict(showgrid=True), yaxis=dict(showgrid=True),
+                           margin=dict(l=40, r=10, t=50, b=40),
+                           showlegend=False)
+        st.plotly_chart(fig1, use_container_width=True)
 
         st.latex(r"v_\theta(r) = A r + \frac{B}{r}")
         st.latex(
@@ -85,15 +88,18 @@ def visualization():
     with col2:
         st.subheader("Shear-stress distribution τ(r)")
         tau = -2 * mu * B / r**2
-        fig2, ax2 = plt.subplots(figsize=(5, 4))
-        ax2.plot(r, tau, lw=2.5, color="darkorange")
-        ax2.axvline(R1, color="gray", ls="--", alpha=0.6)
-        ax2.axvline(R2, color="gray", ls="--", alpha=0.6)
-        ax2.set_xlabel("r")
-        ax2.set_ylabel("τ(r)")
-        ax2.set_title("Shear stress across the gap")
-        ax2.grid(alpha=0.3)
-        st.pyplot(fig2)
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(x=r, y=tau, mode="lines",
+                                  line=dict(width=3, color="darkorange"),
+                                  name="τ(r)"))
+        for wall in (R1, R2):
+            fig2.add_vline(x=wall, line_dash="dash", line_color="gray", opacity=0.6)
+        fig2.update_layout(title="Shear stress across the gap",
+                           xaxis_title="r", yaxis_title="τ(r)",
+                           xaxis=dict(showgrid=True), yaxis=dict(showgrid=True),
+                           margin=dict(l=40, r=10, t=50, b=40),
+                           showlegend=False)
+        st.plotly_chart(fig2, use_container_width=True)
         st.latex(r"\tau(r) = \mu\,r\,\frac{d\Omega}{dr} = -\frac{2\,\mu\,B}{r^2}")
         st.caption(
             "Magnitude is largest at the inner wall. The sign gives the "
