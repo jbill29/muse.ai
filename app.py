@@ -2,7 +2,7 @@
 import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Taylor-Couette Flow Visualizer", layout="wide")
 
@@ -19,6 +19,92 @@ def v_theta(r, A, B):
 
 def omega(r, A, B):
     return A + B / r**2
+
+LIVE_PLOTS_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; }
+  .sliders { display: flex; flex-wrap: wrap; gap: 10px 26px; padding: 2px 8px 6px; }
+  .ctl { display: flex; align-items: center; gap: 8px; }
+  .ctl label { font-size: 13px; white-space: nowrap; min-width: 78px; color: #333; }
+  .ctl output { font-size: 13px; min-width: 46px; text-align: right;
+                font-variant-numeric: tabular-nums; color: #111; }
+  .ctl input[type=range] { width: 130px; accent-color: #1f77b4; cursor: pointer; }
+  #warn { color: #b00020; font-size: 13px; padding: 0 8px 4px; display: none; }
+  #ab { font-size: 13px; padding: 0 8px 2px; color: #555;
+        font-variant-numeric: tabular-nums; }
+  .plots { display: flex; gap: 8px; }
+  .plots > div { flex: 1; min-width: 0; }
+</style>
+</head>
+<body>
+<div class="sliders">
+  <div class="ctl"><label>R&#8321; (m)</label><input id="sR1" type="range" min="0.1" max="2" step="0.05" value="1"><output id="oR1">1.00</output></div>
+  <div class="ctl"><label>R&#8322; (m)</label><input id="sR2" type="range" min="0.5" max="3" step="0.05" value="2"><output id="oR2">2.00</output></div>
+  <div class="ctl"><label>&omega;&#8321; (rad/s)</label><input id="sw1" type="range" min="-5" max="5" step="0.1" value="2"><output id="ow1">2.0</output></div>
+  <div class="ctl"><label>&omega;&#8322; (rad/s)</label><input id="sw2" type="range" min="-5" max="5" step="0.1" value="0.5"><output id="ow2">0.5</output></div>
+  <div class="ctl"><label>&mu; (Pa&middot;s)</label><input id="smu" type="range" min="0.01" max="2" step="0.01" value="0.5"><output id="omu">0.50</output></div>
+</div>
+<div id="warn">Need R&#8322; &gt; R&#8321; &mdash; widen the outer radius or shrink the inner one.</div>
+<div id="ab"></div>
+<div class="plots">
+  <div id="plotV"></div>
+  <div id="plotT"></div>
+</div>
+<script>
+function val(id){ return parseFloat(document.getElementById(id).value); }
+function draw(){
+  var R1 = val('sR1'), R2 = val('sR2'), w1 = val('sw1'),
+      w2 = val('sw2'), mu = val('smu');
+  document.getElementById('oR1').textContent = R1.toFixed(2);
+  document.getElementById('oR2').textContent = R2.toFixed(2);
+  document.getElementById('ow1').textContent = w1.toFixed(1);
+  document.getElementById('ow2').textContent = w2.toFixed(1);
+  document.getElementById('omu').textContent = mu.toFixed(2);
+  var warn = document.getElementById('warn');
+  if (R2 <= R1){ warn.style.display = 'block'; return; }
+  warn.style.display = 'none';
+  var den = R2*R2 - R1*R1;
+  var A = (w2*R2*R2 - w1*R1*R1) / den;
+  var B = (w1 - w2)*R1*R1*R2*R2 / den;
+  document.getElementById('ab').textContent = 'A = ' + A.toFixed(3) + ',   B = ' + B.toFixed(3);
+  var N = 240, r = [], v = [], tau = [];
+  for (var i = 0; i < N; i++){
+    var ri = R1 + (R2 - R1)*i/(N - 1);
+    r.push(ri);
+    v.push(A*ri + B/ri);
+    tau.push(-2*mu*B/(ri*ri));
+  }
+  var walls = [
+    {type:'line', x0:R1, x1:R1, y0:0, y1:1, yref:'paper',
+     line:{dash:'dash', color:'gray', width:1}},
+    {type:'line', x0:R2, x1:R2, y0:0, y1:1, yref:'paper',
+     line:{dash:'dash', color:'gray', width:1}}
+  ];
+  var cfg = {displayModeBar: true, responsive: true};
+  Plotly.react('plotV',
+    [{x:r, y:v, mode:'lines', line:{width:3, color:'#1f77b4'}}],
+    {title:'Azimuthal velocity across the gap',
+     xaxis:{title:'r'}, yaxis:{title:'v\u03b8(r)'},
+     shapes: walls, margin:{l:55, r:10, t:45, b:40}, height:400}, cfg);
+  Plotly.react('plotT',
+    [{x:r, y:tau, mode:'lines', line:{width:3, color:'#ff7f0e'}}],
+    {title:'Shear stress across the gap',
+     xaxis:{title:'r'}, yaxis:{title:'\u03c4(r)'},
+     shapes: walls, margin:{l:55, r:10, t:45, b:40}, height:400}, cfg);
+}
+document.querySelectorAll('input[type=range]').forEach(function(el){
+  el.addEventListener('input', draw);
+});
+draw();
+</script>
+</body>
+</html>
+"""
+
 
 @st.fragment
 def visualization():
@@ -59,52 +145,26 @@ def visualization():
     w1_crit = (TA_CRIT * nu**2 / (d_gap**3 * R1)) ** 0.5
     is_laminar = Ta < TA_CRIT
 
-    col1, col2 = st.columns(2)
+    st.subheader("Live playground \u2014 velocity & shear stress")
+    st.caption(
+        "Drag the sliders: both curves morph in real time, computed entirely in "
+        "your browser with no server round-trip. These sliders drive only these "
+        "two plots; the controls above drive the vector field, torque, and "
+        "Taylor panel below."
+    )
+    components.html(LIVE_PLOTS_HTML, height=640, scrolling=False)
 
-    r = np.linspace(R1, R2, 300)
-    v = v_theta(r, A, B)
-
-    with col1:
-        st.subheader("Velocity profile vθ(r)")
-        fig1 = go.Figure()
-        fig1.add_trace(go.Scatter(x=r, y=v, mode="lines",
-                                 line=dict(width=3), name="vθ(r)"))
-        for wall in (R1, R2):
-            fig1.add_vline(x=wall, line_dash="dash", line_color="gray", opacity=0.6)
-        fig1.update_layout(title="Azimuthal velocity across the gap",
-                           xaxis_title="r", yaxis_title="vθ(r)",
-                           xaxis=dict(showgrid=True), yaxis=dict(showgrid=True),
-                           margin=dict(l=40, r=10, t=50, b=40),
-                           showlegend=False)
-        st.plotly_chart(fig1, use_container_width=True)
-
-        st.latex(r"v_\theta(r) = A r + \frac{B}{r}")
-        st.latex(
-            r"A = \frac{\omega_2 R_2^2 - \omega_1 R_1^2}{R_2^2 - R_1^2}"
-            r",\quad B = \frac{(\omega_1 - \omega_2) R_1^2 R_2^2}{R_2^2 - R_1^2}"
-        )
-        st.write(f"Current values: A = {A:.3f}, B = {B:.3f}, T = {T_torque:.4f} N·m")
-
-    with col2:
-        st.subheader("Shear-stress distribution τ(r)")
-        tau = -2 * mu * B / r**2
-        fig2 = go.Figure()
-        fig2.add_trace(go.Scatter(x=r, y=tau, mode="lines",
-                                  line=dict(width=3, color="darkorange"),
-                                  name="τ(r)"))
-        for wall in (R1, R2):
-            fig2.add_vline(x=wall, line_dash="dash", line_color="gray", opacity=0.6)
-        fig2.update_layout(title="Shear stress across the gap",
-                           xaxis_title="r", yaxis_title="τ(r)",
-                           xaxis=dict(showgrid=True), yaxis=dict(showgrid=True),
-                           margin=dict(l=40, r=10, t=50, b=40),
-                           showlegend=False)
-        st.plotly_chart(fig2, use_container_width=True)
-        st.latex(r"\tau(r) = \mu\,r\,\frac{d\Omega}{dr} = -\frac{2\,\mu\,B}{r^2}")
-        st.caption(
-            "Magnitude is largest at the inner wall. The sign gives the "
-            "stress direction relative to +θ."
-        )
+    st.latex(r"v_\theta(r) = A r + \frac{B}{r}")
+    st.latex(
+        r"A = \frac{\omega_2 R_2^2 - \omega_1 R_1^2}{R_2^2 - R_1^2}"
+        r",\quad B = \frac{(\omega_1 - \omega_2) R_1^2 R_2^2}{R_2^2 - R_1^2}"
+    )
+    st.latex(r"\tau(r) = \mu\,r\,\frac{d\Omega}{dr} = -\frac{2\,\mu\,B}{r^2}")
+    st.write(
+        f"Values from the controls above: A = {A:.3f}, B = {B:.3f}, "
+        f"T = {T_torque:.4f} N\u00b7m. Shear magnitude is largest at the inner wall; "
+        "the sign gives the stress direction relative to +\u03b8."
+    )
 
     st.subheader("Torque transmitted through the fluid")
     st.latex(r"T = -4\,\pi\,\mu\,L\,B")
